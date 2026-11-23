@@ -41,7 +41,13 @@ func reviewFixTests() {
         }
         feed(g0, .zero, 1)
         var t = 0.0
-        while t < 1.2 { e.ingest(gravity: g0, translational: SIMD3(0, 0.06 * 2 * .pi / 1.44 * sin(2 * .pi * t / 1.2), 0), omega: .zero, dt: dt); t += dt }
+        while t < 1.2 {
+            let phase: Double = 2 * Double.pi * t / 1.2
+            let peak: Double = 0.06 * 2 * Double.pi / 1.44
+            let forward: Double = peak * sin(phase)
+            e.ingest(gravity: g0, translational: SIMD3<Double>(0, forward, 0), omega: .zero, dt: dt)
+            t += dt
+        }
         feed(g0, .zero, 1)
         var p = 0.0
         while p < 25 { p += 0.5; e.ingest(gravity: grav(p), translational: .zero, omega: .zero, dt: dt) }   // tip the head while slouched

@@ -31,7 +31,14 @@ struct HunchModel: Codable, Equatable {
             let v = zip(x, w).reduce(0) { $0 + ($1.0[j] - means[j]) * ($1.0[j] - means[j]) * $1.1 } / wsum
             stds[j] = max(v.squareRoot(), 1e-3)
         }
-        let xs = x.map { r in (0..<d).map { (r[$0] - means[$0]) / stds[$0] } }
+        var xs: [[Double]] = []
+        xs.reserveCapacity(x.count)
+        for r in x {
+            var row: [Double] = []
+            row.reserveCapacity(d)
+            for j in 0..<d { row.append((r[j] - means[j]) / stds[j]) }
+            xs.append(row)
+        }
         var wt = [Double](repeating: 0, count: d), b = 0.0
         for _ in 0..<iterations {
             var gw = [Double](repeating: 0, count: d), gb = 0.0
@@ -46,7 +53,13 @@ struct HunchModel: Codable, Equatable {
             b -= learningRate * gb / wsum
         }
         var m = HunchModel(weights: wt, bias: b, means: means, stds: stds, trainingAccuracy: 0, exampleCount: x.count)
-        m.trainingAccuracy = Double(zip(x, y).filter { (m.probability($0.0) > 0.5) == ($0.1 == 1) }.count) / Double(max(1, x.count))
+        var correct: Int = 0
+        for i in x.indices {
+            let predicted: Bool = m.probability(x[i]) > 0.5
+            let actual: Bool = y[i] == 1
+            if predicted == actual { correct += 1 }
+        }
+        m.trainingAccuracy = Double(correct) / Double(max(1, x.count))
         return m
     }
 

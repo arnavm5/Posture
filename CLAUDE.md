@@ -14,10 +14,11 @@ open build/Posture.app     # run (it's an LSUIElement menu-bar app; `pkill -x Po
 ./test.sh                  # compile + run the whole test suite (exit code 1 on failure)
 ```
 
-- **No SwiftPM, no Xcode project.** Everything is built with plain `swiftc -swift-version 5`. If the Xcode license isn't accepted, prefix with `DEVELOPER_DIR=/Library/Developer/CommandLineTools`.
+- **No SwiftPM, no Xcode project.** Everything is built with plain `swiftc -swift-version 5`. Both scripts source `scripts/toolchain.sh`, which falls back to the Command Line Tools if Xcode is unusable (license not accepted) and builds for the host CPU; `UNIVERSAL=1 ./build.sh` builds arm64 + x86_64, `ARCHS=x86_64` picks one. Minimum macOS is `MACOS_MIN` there (keep it in sync with `LSMinimumSystemVersion`).
 - **Adding files:** `build.sh` globs `Sources/Shared/*.swift Sources/macOS/*.swift`, but **`test.sh` lists Shared files explicitly**. A new Shared file needed by tests must be added to `test.sh`. Tests never compile `Sources/macOS` (it has the `@main`).
 - **Tests:** a custom harness, not XCTest (`Tests/TestSupport.swift`: `test(...)`, `expect`, `expectNear`). `Tests/main.swift` calls each group function (`estimatorTests()`, `feelTests(resources:)`, …). There's no per-test filter. To run one group, temporarily call only that function in `main.swift`. Add a new test group by writing a `func xxxTests()` and calling it from `main.swift`.
 - **No macros:** the Command Line Tools toolchain lacks the SwiftUI macro plugins, so `@State` / `@Observable` fail to compile there. Use `ObservableObject` + `@Published`, `@StateObject`, `@AppStorage` (property wrappers, not macros).
+- **Must build with Swift 6.2 (macOS 26 / Xcode 26) as well as newer compilers.** 6.2 gives up ("unable to type-check this expression in reasonable time") on long expressions that mix literals, `.pi` and SIMD/matrix math, and can't resolve `simd_double3x3 * Double` (use `scaled(_:by:)`). Write such math as short steps with explicit types (`let x: Float = …`, `SIMD3<Float>(…)`), avoid long `map/filter/reduce` chains, and prefer per-component scaling to `SIMD3(...) * (a * b)`. `./test.sh` fails on any expression over 50 ms. To check against 6.2 itself: unpack the swift.org 6.2.x toolchain and run `PATH=<toolchain>/usr/bin:$PATH SDKROOT=/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk ./test.sh`.
 
 ## Architecture
 

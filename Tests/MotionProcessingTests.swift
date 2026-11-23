@@ -12,7 +12,11 @@ private func rotate(axis: SIMD3<Double>, amplitude: Double, frequency: Double, s
     var t = 0.0
     let w0 = 2 * .pi * frequency
     // Real heads start and stop smoothly: oscillation under a sin² envelope (rest at both ends).
-    func angle(_ t: Double) -> Double { amplitude * sin(w0 * t) * pow(sin(.pi * min(max(t / seconds, 0), 1)), 2) }
+    func angle(_ t: Double) -> Double {
+        let progress: Double = min(max(t / seconds, 0), 1)
+        let envelope: Double = pow(sin(Double.pi * progress), 2)
+        return amplitude * sin(w0 * t) * envelope
+    }
     let h = 1e-4
     while t < seconds {
         let theta = angle(t)

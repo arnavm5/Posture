@@ -75,11 +75,15 @@ struct PostureEstimator {
     mutating func adaptNeutral(toward gravity: SIMD3<Double>, dt: Double) {
         let g = simd_normalize(gravity), g0 = simd_normalize(calibration.neutralGravity)
         guard angle(g, g0) < Self.adaptWithin else { return }
-        var n = simd_normalize(g0 + (g - g0) * (1 - exp(-dt / Self.adaptSeconds)))
+        let rate: Double = 1 - exp(-dt / Self.adaptSeconds)
+        let step: SIMD3<Double> = (g - g0) * rate
+        var n: SIMD3<Double> = simd_normalize(g0 + step)
         let drift = angle(n, savedNeutral)
         if drift > Self.adaptCap {                       // hold at the cap, in the direction it was going
-            let axis = simd_normalize(n - simd_dot(n, savedNeutral) * savedNeutral)
-            n = simd_normalize(savedNeutral * cos(Self.adaptCap) + axis * sin(Self.adaptCap))
+            let along: Double = simd_dot(n, savedNeutral)
+            let axis: SIMD3<Double> = simd_normalize(n - savedNeutral * along)
+            let capCos: Double = cos(Self.adaptCap), capSin: Double = sin(Self.adaptCap)
+            n = simd_normalize(savedNeutral * capCos + axis * capSin)
         }
         let turn = simd_quatd(from: g0, to: n)
         var f = turn.act(calibration.forward)

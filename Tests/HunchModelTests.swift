@@ -30,8 +30,14 @@ func hunchModelTests() {
         let trees = BoostedTrees.train(x: Array(x[0..<300]), y: Array(y[0..<300]), w: Array(w[0..<300]))
         let linear = HunchModel.fit(x: Array(x[0..<300]), y: Array(y[0..<300]), w: Array(w[0..<300]))
         let test = Array(zip(x[300...], y[300...]))
-        let treeAcc = Double(test.filter { (trees.probability($0.0) > 0.5) == ($0.1 == 1) }.count) / Double(test.count)
-        let linAcc = Double(test.filter { (linear.probability($0.0) > 0.5) == ($0.1 == 1) }.count) / Double(test.count)
+        var treeRight: Int = 0, linRight: Int = 0
+        for (features, label) in test {
+            let actual: Bool = label == 1
+            if (trees.probability(features) > 0.5) == actual { treeRight += 1 }
+            if (linear.probability(features) > 0.5) == actual { linRight += 1 }
+        }
+        let treeAcc: Double = Double(treeRight) / Double(test.count)
+        let linAcc: Double = Double(linRight) / Double(test.count)
         expect(treeAcc >= 0.9, "trees \(treeAcc)")
         expect(linAcc <= 0.7, "linear \(linAcc) (can't represent it)")
     }
@@ -116,7 +122,11 @@ func hunchModelTests() {
         let suite = "posture.tests.migrate"
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
-        let old = (0..<30).map { i in HunchExample(features: [Double](repeating: Double(i % 2), count: 8), hunched: i % 2 == 0, date: Date()) }
+        var old: [HunchExample] = []
+        for i in 0..<30 {
+            let features: [Double] = Array(repeating: Double(i % 2), count: 8)
+            old.append(HunchExample(features: features, hunched: i % 2 == 0, date: Date()))
+        }
         defaults.set(try! JSONEncoder().encode(old), forKey: "hunchExamples")
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("posture-migrate-\(UUID().uuidString).json")
         let learner = HunchLearner(fileURL: file, defaults: defaults)

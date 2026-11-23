@@ -38,22 +38,30 @@ func modelTests(resources: URL) {
         let smooth = MeshSmoothing.smoothed(raw, iterations: 30, keepBelowY: -3.8)
         let a = raw.positions, b = smooth.positions
         expect(a.count == b.count)
-        let meanShift = zip(a, b).map { simd_length($0 - $1) }.reduce(0, +) / Float(a.count)
+        var totalShift: Float = 0
+        for i in a.indices {
+            let delta: SIMD3<Float> = a[i] - b[i]
+            totalShift += simd_length(delta)
+        }
+        let meanShift: Float = totalShift / Float(a.count)
         expect(meanShift < 0.05, "mean vertex shift \(meanShift)")
     }
 
     test("female morph slims the jaw and leaves the crown alone") {
-        let jaw = HairBuilder.femaleMorph(SIMD3(1.4, 0.6, 1.0))
+        let jaw: SIMD3<Float> = HairBuilder.femaleMorph(SIMD3<Float>(1.4, 0.6, 1.0))
         expect(jaw.x < 1.4 * 0.95, "jaw x \(jaw.x)")
-        let crown = HairBuilder.femaleMorph(SIMD3(0.5, 3.8, 0.2))
-        expect(simd_length(crown - SIMD3(0.5, 3.8, 0.2)) < 1e-4, "crown moved")
+        let crownStart = SIMD3<Float>(0.5, 3.8, 0.2)
+        let crown: SIMD3<Float> = HairBuilder.femaleMorph(crownStart)
+        let crownMove: Float = simd_length(crown - crownStart)
+        expect(crownMove < 1e-4, "crown moved")
     }
 
     test("scalp map never sits below the surface it was built from") {
         let pts = (0..<4000).map { i -> SIMD3<Float> in
-            let phi = Float(i) * 2.399963, y = 1 - 2 * (Float(i) + 0.5) / 4000
-            let r = (1 - y * y).squareRoot()
-            return SIMD3(r * cos(phi), y, r * sin(phi)) * 2
+            let phi: Float = Float(i) * 2.399963
+            let y: Float = 1 - 2 * (Float(i) + 0.5) / 4000
+            let r: Float = (1 - y * y).squareRoot()
+            return SIMD3<Float>(2 * r * cos(phi), 2 * y, 2 * r * sin(phi))
         }
         let map = RadialMap(points: pts, center: .zero)
         for el in stride(from: Float(-1.2), through: 1.2, by: 0.3) {

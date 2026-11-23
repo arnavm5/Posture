@@ -133,9 +133,12 @@ func estimatorTests() {
         // Fast sit-up: 25° → 0° in 0.6 s while moving back, with sensor-fusion gravity leak.
         var t = 0.0
         while t < 0.6 {
-            let leak = 0.25 * 9.81 * sin(.pi * t / 0.6)
-            let back = -0.06 * 2 * .pi / 0.36 * sin(2 * .pi * t / 0.6)
-            feed(&e, gravity: gravity(pitchDegrees: 25 * (1 - t / 0.6)), accel: SIMD3(0, back + leak, 0), noise: &n)
+            let leak: Double = 0.25 * 9.81 * sin(Double.pi * t / 0.6)
+            let phase: Double = 2 * Double.pi * t / 0.6
+            let peak: Double = -0.06 * 2 * Double.pi / 0.36
+            let back: Double = peak * sin(phase)
+            let pitch: Double = 25 * (1 - t / 0.6)
+            feed(&e, gravity: gravity(pitchDegrees: pitch), accel: SIMD3<Double>(0, back + leak, 0), noise: &n)
             t += dt
         }
         still(&e, seconds: 1, noise: &n)

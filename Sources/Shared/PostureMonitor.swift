@@ -206,7 +206,11 @@ final class PostureMonitor: ObservableObject {
         guard let k = compensator.step(gravity: c.gravity, accel: c.accel, omega: c.omega,
                                        rotation: c.rotation, dt: c.dt) else { return }
         let g = k.gravity
-        smoothedGravity = smoothedGravity.map { $0 + 0.08 * (g - $0) } ?? g
+        if let previous: SIMD3<Double> = smoothedGravity {
+            smoothedGravity = previous + (g - previous) * 0.08
+        } else {
+            smoothedGravity = g
+        }
 
         // 2. Position trackers (world frame): the display-only one, and the sitting/standing detector.
         let world = worldFrame.toWorld(k.translational, gravity: g, rotation: k.rotation)

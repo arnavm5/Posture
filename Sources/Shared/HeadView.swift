@@ -222,7 +222,9 @@ final class HeadScene {
         func line(_ a: SIMD3<Float>, _ b: SIMD3<Float>, major: Bool) {
             let segments = 24                                       // split so the fade is smooth along the line
             for k in 0..<segments {
-                let p0 = a + (b - a) * Float(k) / Float(segments), p1 = a + (b - a) * Float(k + 1) / Float(segments)
+                let span: SIMD3<Float> = b - a
+                let f0: Float = Float(k) / Float(segments), f1: Float = Float(k + 1) / Float(segments)
+                let p0: SIMD3<Float> = a + span * f0, p1: SIMD3<Float> = a + span * f1
                 for p in [p0, p1] {
                     let fade = max(0, 1 - simd_length(p - center) / 15)
                     let alpha = (major ? 0.32 : 0.14) * fade * fade

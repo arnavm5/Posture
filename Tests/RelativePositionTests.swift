@@ -5,9 +5,14 @@ private struct Noise {
     var state: UInt64 = 7
     mutating func scalar(_ amp: Double) -> Double {
         state = state &* 6364136223846793005 &+ 1442695040888963407
-        return (Double(state >> 11) / Double(1 << 53) - 0.5) * 2 * amp
+        let top53: UInt64 = state >> 11
+        let unit: Double = Double(top53) / 9007199254740992.0            // 2^53 → [0, 1)
+        return (unit - 0.5) * 2 * amp
     }
-    mutating func vec(_ amp: Double = 0.04) -> SIMD3<Double> { SIMD3(scalar(amp), scalar(amp), scalar(amp)) }
+    mutating func vec(_ amp: Double = 0.04) -> SIMD3<Double> {
+        let x: Double = scalar(amp), y: Double = scalar(amp), z: Double = scalar(amp)
+        return SIMD3<Double>(x, y, z)
+    }
 }
 
 private let dt = 0.04
@@ -74,8 +79,11 @@ func relativePositionTests() {
         expect(!t.moving, "desk jitter alone should not count as moving (floor \(t.noiseFloor))")
         var s = 0.0, T = 1.6
         while s < T {                                            // stand up while still typing-noisy
-            let a = SIMD3<Double>(0, 0, 0.5) * (2 * .pi / (T * T) * sin(2 * .pi * s / T))
-            t.ingest(worldAccel: a + n.vec(0.09) + SIMD3(0, 0, 0.12 * sin(s * 2 * .pi * 9)), dt: dt)
+            let lift: Double = 0.5 * 2 * Double.pi / (T * T) * sin(2 * Double.pi * s / T)
+            let typing: Double = 0.12 * sin(s * 2 * Double.pi * 9)
+            let noise: SIMD3<Double> = n.vec(0.09)
+            let a: SIMD3<Double> = SIMD3<Double>(0, 0, lift + typing) + noise
+            t.ingest(worldAccel: a, dt: dt)
             s += dt
         }
         desk(&t, 3, noise: &n)

@@ -28,7 +28,7 @@ struct ZUPTKalman {
         x.y += a * dt
         let F = simd_double3x3(rows: [SIMD3(1, dt, -0.5 * dt * dt), SIMD3(0, 1, -dt), SIMD3(0, 0, 1)])
         let G = SIMD3(0.5 * dt * dt, dt, 0)
-        var Q = outer(G, G) * (accelNoise * accelNoise)
+        var Q: simd_double3x3 = scaled(outer(G, G), by: accelNoise * accelNoise)
         Q[2][2] += biasWalk * biasWalk * dt
         P = F * P * F.transpose + Q
     }
@@ -55,8 +55,13 @@ struct ZUPTKalman {
         let k = Ph / s
         x += k * (z - simd_dot(h, x))
         P -= outer(k, Ph)
-        P = (P + P.transpose) * 0.5                   // keep it symmetric
+        P = scaled(P + P.transpose, by: 0.5)          // keep it symmetric
     }
+}
+
+/// m · s, written out per column: Swift 6.2 with the macOS 26 SDK can't resolve `matrix * Double` here.
+func scaled(_ m: simd_double3x3, by s: Double) -> simd_double3x3 {
+    simd_double3x3(columns: (m.columns.0 * s, m.columns.1 * s, m.columns.2 * s))
 }
 
 /// a ⊗ b
@@ -200,7 +205,12 @@ struct LeverArmFit {
         guard abs(reg.determinant) > 1e-9 else { return nil }
         let r = reg.inverse * (b + prior * ridge)
         guard (0.02...0.20).contains(simd_length(r)) else { return nil }
-        let rms = (residuals.map { simd_length_squared($0.a - $0.M * r) }.reduce(0, +) / Double(residuals.count)).squareRoot()
+        var squaredError: Double = 0
+        for res in residuals {
+            let miss: SIMD3<Double> = res.a - res.M * r
+            squaredError += simd_length_squared(miss)
+        }
+        let rms: Double = (squaredError / Double(residuals.count)).squareRoot()
         return (r, rms)
     }
 }

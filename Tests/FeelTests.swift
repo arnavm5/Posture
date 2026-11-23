@@ -22,7 +22,12 @@ func feelTests(resources: URL) {
     test("smoothing removes jitter while the head is still") {
         let r = rig()
         var s: UInt64 = 3
-        func jitter() -> Float { s = s &* 6364136223846793005 &+ 1442695040888963407; return (Float(s >> 40) / Float(1 << 24) - 0.5) * 0.03 }
+        func jitter() -> Float {
+            s = s &* 6364136223846793005 &+ 1442695040888963407
+            let top24: UInt64 = s >> 40
+            let unit: Float = Float(top24) / 16777216.0                    // 2^24 → [0, 1)
+            return (unit - 0.5) * 0.03
+        }
         var rawSteps: [Float] = [], smoothSteps: [Float] = []
         var prevRaw: Float = 0, prevSmooth: Float = 0
         for frame in 0..<600 {                                   // 10 s at 60 fps, readings at ~25 Hz

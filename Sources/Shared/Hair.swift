@@ -385,10 +385,11 @@ enum HairBuilder {
     private static func capGeometry(map: RadialMap, style: MannequinStyle) -> SCNGeometry {
         let cols = 160, rows = 40
         return Grid.geometry(rows: rows + 1, cols: cols) { i, j in
-            let phi = -Float.pi + 2 * .pi * Float(j) / Float(cols)
-            let eh = hairline(phi: phi, style: style)
-            let s = 1 - Float(min(i, rows)) / Float(rows)
-            let el = eh + (.pi / 2 - eh) * s
+            let around: Float = Float(j) / Float(cols)
+            let phi: Float = -Float.pi + 2 * Float.pi * around
+            let eh: Float = hairline(phi: phi, style: style)
+            let s: Float = 1 - Float(min(i, rows)) / Float(rows)
+            let el: Float = eh + (Float.pi / 2 - eh) * s
             let edge: Float = i > rows ? -0.04 : 0.008
             let r: Float = map.radius(phi: phi, el: el) + edge
             return center + direction(phi: phi, el: el) * r
