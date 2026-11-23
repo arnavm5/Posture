@@ -170,7 +170,8 @@ enum HairBuilder {
             var p: SIMD3<Float> = root
             var pts: [SIMD3<Float>] = [root]
             let outward: SIMD3<Float> = n * (0.12 + 0.88 * top)
-            let rise: SIMD3<Float> = SIMD3<Float>(0, 1, 0) * (0.45 * front * top)
+            let riseAmount: Float = 0.45 * front * top
+            let rise: SIMD3<Float> = SIMD3<Float>(0, riseAmount, 0)
             let lieFlat: SIMD3<Float> = tangential(SIMD3<Float>(0, -1, -0.35), n) * (1 - top)
             var d: SIMD3<Float> = simd_normalize(outward + rise + lieFlat)
             for k in 1...segments {
@@ -242,7 +243,8 @@ enum HairBuilder {
                 let fan: Float = 0.10 + 0.42 * swell * taper
                 let waveX: Float = sin(t * 9 + phase)
                 let waveZ: Float = cos(t * 7 + phase)
-                let wave: SIMD3<Float> = SIMD3<Float>(waveX, 0, waveZ) * (0.07 * t)
+                let waveAmount: Float = 0.07 * t
+                let wave: SIMD3<Float> = SIMD3<Float>(waveX * waveAmount, 0, waveZ * waveAmount)
                 let spread: Float = fan * smoothstep(0, 0.18, t)
                 var p: SIMD3<Float> = c + side * spread + wave
                 p.z = min(p.z, backSurfaceZ(y: p.y) - 0.12)                       // stay behind the head/back
@@ -298,7 +300,8 @@ enum HairBuilder {
                     let jx: Float = Float(rng.next()) - 0.5
                     let jy: Float = Float(rng.next()) - 0.5
                     let jz: Float = Float(rng.next()) - 0.5
-                    let jitter: SIMD3<Float> = SIMD3<Float>(jx, jy, jz) * (g.frizz * t)
+                    let jitterAmount: Float = g.frizz * t
+                    let jitter: SIMD3<Float> = SIMD3<Float>(jx * jitterAmount, jy * jitterAmount, jz * jitterAmount)
                     let pull: Float = 1 - g.clump * pow(t, 0.8)
                     var p: SIMD3<Float> = gp + offset * pull + jitter
                     if g.collide { p = pushOut(p, map: map, lift: 0.012) }
