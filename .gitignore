@@ -1,0 +1,32 @@
+# Build output
+build/
+.build/
+DerivedData/
+*.xcarchive
+*.dSYM/
+*.dSYM.zip
+
+# SwiftPM / Xcode user state
+.swiftpm/
+*.xcodeproj/xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcuserstate
+xcuserdata/
+Package.resolved
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# Local tooling
+.claude/
