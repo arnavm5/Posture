@@ -32,6 +32,15 @@ open build/Posture.app
 `build.sh` compiles `Sources/Shared` + `Sources/macOS` with `swiftc`, assembles `build/Posture.app`,
 copies the 3D model into it, and ad-hoc signs it. Copy it to `/Applications` and turn on
 **Launch at login** from the menu if you want to keep it.
+On an Intel Mac it builds for Intel automatically; `UNIVERSAL=1 ./build.sh` makes one app for both.
+
+### Or run it from Xcode
+
+Open `Posture.xcodeproj`, pick the **Posture** scheme and press **Run** (⌘R). The app has no Dock
+icon or window: look for it in the menu bar and around the notch. Quit any copy started from
+`build/Posture.app` first, or you'll have two. Breakpoints and the debugger work as usual.
+The project uses synchronized folders, so new files in `Sources/` and `Tests/` show up automatically.
+To run the tests in Xcode, pick the **PostureTests** scheme and press **Run** (results print in the console).
 
 ## First run: calibration (about 15 seconds)
 
@@ -175,7 +184,7 @@ when you move (no lag).
 ./test.sh
 ```
 
-Compiles and runs the suite in `Tests/` with plain `swiftc` (no Xcode project needed). It covers:
+Compiles and runs the suite in `Tests/` with plain `swiftc` (or use the **PostureTests** scheme in Xcode). It covers:
 - **Posture estimator:** leaning, slumping, sitting back, noise, bias learning, uncertainty,
   forward vs side tilt, the "lurch after an alert" regression, drift relaxation.
 - **Motion processing:** Kalman integration and bias learning, gyro sign confirmation, lever-arm
@@ -214,6 +223,7 @@ Sources/
 Resources/                Mac Info.plist, Models/ (head scan, normal map, license)
 Tests/                    Test suite (run with ./test.sh)
 build.sh, test.sh         Build and test scripts
+Posture.xcodeproj         Xcode project (optional; same sources)
 ```
 
 ## Troubleshooting
