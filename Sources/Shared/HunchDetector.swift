@@ -206,16 +206,30 @@ enum HunchFeatureSet {
         var out = [Int16]()
         out.reserveCapacity(readings.count * 4)
         func q(_ v: Double) -> Int16 { Int16(max(-32767, min(32767, (v * 10).rounded()))) }
-        for r in readings { out += [q(r.pitch), q(r.roll), q(r.forwardCM), q(r.dropCM)] }
+        for r in readings {
+            out.append(q(r.pitch)); out.append(q(r.roll)); out.append(q(r.forwardCM)); out.append(q(r.dropCM))
+        }
         return out.withUnsafeBufferPointer { Data(buffer: $0) }
     }
 
+    // Written as simple typed steps on purpose: as one big expression, older Swift compilers
+    // (e.g. Swift 6.2 on macOS 26) fail with "unable to type-check this expression in reasonable time".
     static func decode(_ data: Data) -> [PostureReading] {
-        let values: [Int16] = data.withUnsafeBytes { Array($0.bindMemory(to: Int16.self)) }
-        return stride(from: 0, to: values.count - 3, by: 4).map { i in
-            PostureReading(tilt: 0, pitch: Double(values[i]) / 10, roll: Double(values[i + 1]) / 10,
-                           forwardCM: Double(values[i + 2]) / 10, dropCM: Double(values[i + 3]) / 10)
+        let values: [Int16] = data.withUnsafeBytes { (raw: UnsafeRawBufferPointer) -> [Int16] in
+            Array(raw.bindMemory(to: Int16.self))
         }
+        var out: [PostureReading] = []
+        out.reserveCapacity(values.count / 4)
+        var i: Int = 0
+        while i + 3 < values.count {
+            let pitch: Double = Double(values[i]) / 10.0
+            let roll: Double = Double(values[i + 1]) / 10.0
+            let forward: Double = Double(values[i + 2]) / 10.0
+            let drop: Double = Double(values[i + 3]) / 10.0
+            out.append(PostureReading(tilt: 0, pitch: pitch, roll: roll, forwardCM: forward, dropCM: drop))
+            i += 4
+        }
+        return out
     }
 
     // MARK: helpers

@@ -7,8 +7,10 @@ typealias PlatformColor = NSColor
 extension NSColor {
     /// sRGB components as floats.
     var rgba: SIMD4<Float> {
-        let c = usingColorSpace(.sRGB) ?? self
-        return SIMD4(Float(c.redComponent), Float(c.greenComponent), Float(c.blueComponent), Float(c.alphaComponent))
+        let c: NSColor = usingColorSpace(.sRGB) ?? self
+        let r: Float = Float(c.redComponent), g: Float = Float(c.greenComponent)
+        let b: Float = Float(c.blueComponent), a: Float = Float(c.alphaComponent)
+        return SIMD4<Float>(r, g, b, a)
     }
 
     static func rgb(_ r: CGFloat, _ g: CGFloat, _ b: CGFloat, _ a: CGFloat = 1) -> NSColor {

@@ -19,7 +19,7 @@ struct RelativePositionTracker {
 
     var maxMotion = 10.0
 
-    private var filters = [ZUPTKalman](repeating: ZUPTKalman(), count: 3)
+    private var filters: [ZUPTKalman] = Array(repeating: ZUPTKalman(), count: 3)
     private var snapshot: [ZUPTKalman]?
     private var stillness = StillnessDetector()
     private var filtered = SIMD3<Double>.zero

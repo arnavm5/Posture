@@ -27,23 +27,35 @@ enum HairBuilder {
     /// Reshapes the (male) head scan into a female bust: softer brow, smaller nose, slimmer jaw,
     /// neck and shoulders, slightly fuller lips.
     static func femaleMorph(_ p0: SIMD3<Float>) -> SIMD3<Float> {
-        var p = p0
-        let face = smoothstep(1.2, 2.0, p.z)                                          // front of the face only
-        p.z -= 0.10 * gauss(p.y - 1.95, 0.22) * gauss(p.x, 0.9) * face                  // brow ridge
-        p.z -= 0.13 * gauss(p.y - 1.05, 0.35) * gauss(p.x, 0.35) * face                 // nose
-        p.x *= 1 - 0.06 * gauss(p.y - 1.05, 0.3) * gauss(p.x, 0.3) * face               // narrower nose
-        p.z += 0.05 * gauss(p.y - 0.30, 0.14) * gauss(p.x, 0.35) * face                 // fuller lips
-        let jaw = smoothstep(1.4, 0.4, p.y) * (1 - smoothstep(-0.6, -1.0, p.y))
-        p.x *= 1 - 0.13 * jaw                                                         // slimmer jaw & chin
-        p.z = (p.z - 0.6) * (1 - 0.05 * jaw) + 0.6
+        var x: Float = p0.x, z: Float = p0.z
+        let y: Float = p0.y
+        let face: Float = smoothstep(1.2, 2.0, z)                                    // front of the face only
+        let brow: Float = gauss(y - 1.95, 0.22) * gauss(x, 0.9) * face
+        let nose: Float = gauss(y - 1.05, 0.35) * gauss(x, 0.35) * face
+        let noseWidth: Float = gauss(y - 1.05, 0.3) * gauss(x, 0.3) * face
+        z -= 0.10 * brow                                                              // softer brow ridge
+        z -= 0.13 * nose                                                              // smaller nose
+        x *= 1 - 0.06 * noseWidth                                                     // narrower nose
+        let lips: Float = gauss(y - 0.30, 0.14) * gauss(x, 0.35) * face
+        z += 0.05 * lips                                                              // fuller lips
+        let jawTop: Float = smoothstep(1.4, 0.4, y)
+        let jawBottom: Float = 1 - smoothstep(-0.6, -1.0, y)
+        let jaw: Float = jawTop * jawBottom
+        x *= 1 - 0.13 * jaw                                                           // slimmer jaw & chin
+        let depthScale: Float = 1 - 0.05 * jaw
+        z = (z - 0.6) * depthScale + 0.6
         // Slimmer neck: pull toward the neck axis.
-        let neck = smoothstep(-0.4, -0.9, p.y) * (1 - smoothstep(-1.6, -2.2, p.y))
+        let neckTop: Float = smoothstep(-0.4, -0.9, y)
+        let neckBottom: Float = 1 - smoothstep(-1.6, -2.2, y)
+        let neck: Float = neckTop * neckBottom
         let axis = SIMD2<Float>(0, -0.35)
-        var r = SIMD2(p.x, p.z) - axis
+        var r: SIMD2<Float> = SIMD2<Float>(x, z) - axis
         if simd_length(r) < 1.9 { r *= 1 - 0.12 * neck }
-        p.x = axis.x + r.x; p.z = axis.y + r.y
-        p.x *= 1 - 0.10 * smoothstep(-1.4, -2.4, p.y)                                // narrower shoulders
-        return p
+        x = axis.x + r.x
+        z = axis.y + r.y
+        let shoulders: Float = smoothstep(-1.4, -2.4, y)
+        x *= 1 - 0.10 * shoulders                                                     // narrower shoulders
+        return SIMD3<Float>(x, y, z)
     }
 
     // MARK: Public
@@ -142,30 +154,42 @@ enum HairBuilder {
         var guides: [Guide] = []
         for (phi, el) in scalpSamples(count: 1300, style: .male, rng: &rng) {
             let eh = hairline(phi: phi, style: .male)
-            let s = (el - eh) / (.pi / 2 - eh)                                    // 0 hairline … 1 crown
-            let front = gauss(phi, 0.85)
-            let top = smoothstep(0.32 - 0.34 * front, 0.48 - 0.36 * front, s)     // long hair on top & front
-            let n = direction(phi: phi, el: el)
-            let root = center + n * map.radius(phi: phi, el: el)
+            let s: Float = (el - eh) / (Float.pi / 2 - eh)                      // 0 hairline … 1 crown
+            let front: Float = gauss(phi, 0.85)
+            let topStart: Float = 0.32 - 0.34 * front
+            let topEnd: Float = 0.48 - 0.36 * front
+            let top: Float = smoothstep(topStart, topEnd, s)                     // long hair on top & front
+            let n: SIMD3<Float> = direction(phi: phi, el: el)
+            let root: SIMD3<Float> = center + n * map.radius(phi: phi, el: el)
 
-            let length = mix(0.07 + 0.22 * smoothstep(0.0, 0.4, s), 0.85 + 0.55 * front + 0.15 * Float(rng.next()), top)
-            let segments = top > 0.5 ? 12 : 5
-            var p = root, pts = [root]
-            var d = simd_normalize(n * (0.12 + 0.88 * top)
-                                   + SIMD3(0, 1, 0) * 0.45 * front * top
-                                   + tangential(SIMD3(0, -1, -0.35), n) * (1 - top))
+            let shortLength: Float = 0.07 + 0.22 * smoothstep(0.0, 0.4, s)
+            let longLength: Float = 0.85 + 0.55 * front + 0.15 * Float(rng.next())
+            let length: Float = mixF(shortLength, longLength, top)
+            let isTop: Bool = top > 0.5
+            let segments: Int = isTop ? 12 : 5
+            var p: SIMD3<Float> = root
+            var pts: [SIMD3<Float>] = [root]
+            let outward: SIMD3<Float> = n * (0.12 + 0.88 * top)
+            let rise: SIMD3<Float> = SIMD3<Float>(0, 1, 0) * (0.45 * front * top)
+            let lieFlat: SIMD3<Float> = tangential(SIMD3<Float>(0, -1, -0.35), n) * (1 - top)
+            var d: SIMD3<Float> = simd_normalize(outward + rise + lieFlat)
             for k in 1...segments {
-                let here = simd_normalize(p - center)
-                let back = tangential(SIMD3(0.18, 0.15, -1), here)               // sweep back and slightly to one side
-                let down = tangential(SIMD3(0, -1, -0.3), here)
-                d = simd_normalize(d + (back * 0.42 + SIMD3(0, -0.04, 0)) * top + down * 0.6 * (1 - top))
+                let here: SIMD3<Float> = simd_normalize(p - center)
+                let back: SIMD3<Float> = tangential(SIMD3<Float>(0.18, 0.15, -1), here)   // sweep back and slightly to one side
+                let down: SIMD3<Float> = tangential(SIMD3<Float>(0, -1, -0.3), here)
+                let sweepDir: SIMD3<Float> = back * 0.42 + SIMD3<Float>(0, -0.04, 0)
+                let sweep: SIMD3<Float> = sweepDir * top
+                let fall: SIMD3<Float> = down * (0.6 * (1 - top))
+                d = simd_normalize(d + sweep + fall)
                 p += d * (length / Float(segments))
-                p = pushOut(p, map: map, lift: 0.02 + 0.24 * top * Float(k) / Float(segments) * (0.6 + 0.4 * front))
+                let progress: Float = Float(k) / Float(segments)
+                let lift: Float = 0.02 + 0.24 * top * progress * (0.6 + 0.4 * front)
+                p = pushOut(p, map: map, lift: lift)
                 pts.append(p)
             }
-            guides.append(Guide(points: pts, width: top > 0.5 ? 0.036 : 0.022, clump: top > 0.5 ? 0.7 : 0.35,
-                                spread: top > 0.5 ? 0.08 : 0.05, children: top > 0.5 ? 14 : 8,
-                                frizz: top > 0.5 ? 0.006 : 0.003))
+            guides.append(Guide(points: pts, width: isTop ? 0.036 : 0.022, clump: isTop ? 0.7 : 0.35,
+                                spread: isTop ? 0.08 : 0.05, children: isTop ? 14 : 8,
+                                frizz: isTop ? 0.006 : 0.003))
         }
         return guides
     }
@@ -182,9 +206,10 @@ enum HairBuilder {
     private static func ponytailGuides(map: RadialMap, gather g: (point: SIMD3<Float>, dir: SIMD3<Float>),
                                        rng: inout RNG) -> [Guide] {
         // Centre line of the tail: lifts out of the tie, arcs back, then falls in a loose S down the back.
-        let spine: [SIMD3<Float>] = [g.point, g.point + SIMD3(0, 0.55, -0.55), SIMD3(0, 2.7, -3.0),
-                                     SIMD3(0.15, 1.0, -3.15), SIMD3(-0.1, -0.6, -3.05), SIMD3(0.12, -2.2, -3.0),
-                                     SIMD3(0.05, -3.2, -2.9)]
+        let lifted: SIMD3<Float> = g.point + SIMD3<Float>(0, 0.55, -0.55)
+        let spine: [SIMD3<Float>] = [g.point, lifted, SIMD3<Float>(0, 2.7, -3.0),
+                                     SIMD3<Float>(0.15, 1.0, -3.15), SIMD3<Float>(-0.1, -0.6, -3.05),
+                                     SIMD3<Float>(0.12, -2.2, -3.0), SIMD3<Float>(0.05, -3.2, -2.9)]
         var guides: [Guide] = []
         for (phi, el) in scalpSamples(count: 1100, style: .female, rng: &rng) {
             let n = direction(phi: phi, el: el)
@@ -192,27 +217,34 @@ enum HairBuilder {
             let tieOffset = disk(around: g.dir, radius: 0.11, rng: &rng)
             let target = g.point + tieOffset
             let tdir = simd_normalize(target - center)
-            let layer = 0.02 + 0.05 * Float(rng.next())                       // overlapping layers, no gaps
+            let layer: Float = 0.02 + 0.05 * Float(rng.next())                // overlapping layers, no gaps
             var pts: [SIMD3<Float>] = []
             let scalpSteps = 12
             for k in 0...scalpSteps {
-                let t = Float(k) / Float(scalpSteps)
-                let d = simd_normalize(mix(n, tdir, t) + 0.0001)
+                let t: Float = Float(k) / Float(scalpSteps)
+                let blended: SIMD3<Float> = mixV(n, tdir, t) + SIMD3<Float>(repeating: 0.0001)
+                let d: SIMD3<Float> = simd_normalize(blended)
                 let sp = sphericalAngles(d)
-                let onScalp = center + d * (map.radius(phi: sp.phi, el: sp.el) + layer + 0.03 * t)
-                pts.append(mix(onScalp, target, smoothstep(0.75, 1.0, t)))
+                let radius: Float = map.radius(phi: sp.phi, el: sp.el) + layer + 0.03 * t
+                let onScalp: SIMD3<Float> = center + d * radius
+                pts.append(mixV(onScalp, target, smoothstep(0.75, 1.0, t)))
             }
             // Tail: follows the spine with its own offset, fanning out and tapering, with soft waves.
-            let lengthEnd = 0.72 + 0.28 * Float(rng.next())
-            let side = disk(around: SIMD3(0, 1, 0), radius: 1, rng: &rng)
-            let phase = Float(rng.next()) * 2 * .pi
+            let lengthEnd: Float = 0.72 + 0.28 * Float(rng.next())
+            let side: SIMD3<Float> = disk(around: SIMD3<Float>(0, 1, 0), radius: 1, rng: &rng)
+            let phase: Float = Float(rng.next()) * 2 * Float.pi
             let tailSteps = 26
             for k in 1...tailSteps {
-                let t = Float(k) / Float(tailSteps) * lengthEnd
-                let c = catmullRom(spine, t)
-                let fan = 0.10 + 0.42 * sin(min(t * 1.25, 1) * .pi) * (1 - 0.4 * t)
-                let wave = SIMD3<Float>(sin(t * 9 + phase), 0, cos(t * 7 + phase)) * 0.07 * t
-                var p = c + side * fan * smoothstep(0, 0.18, t) + wave
+                let t: Float = Float(k) / Float(tailSteps) * lengthEnd
+                let c: SIMD3<Float> = catmullRom(spine, t)
+                let swell: Float = sin(min(t * 1.25, 1) * Float.pi)
+                let taper: Float = 1 - 0.4 * t
+                let fan: Float = 0.10 + 0.42 * swell * taper
+                let waveX: Float = sin(t * 9 + phase)
+                let waveZ: Float = cos(t * 7 + phase)
+                let wave: SIMD3<Float> = SIMD3<Float>(waveX, 0, waveZ) * (0.07 * t)
+                let spread: Float = fan * smoothstep(0, 0.18, t)
+                var p: SIMD3<Float> = c + side * spread + wave
                 p.z = min(p.z, backSurfaceZ(y: p.y) - 0.12)                       // stay behind the head/back
                 pts.append(p)
             }
@@ -227,17 +259,20 @@ enum HairBuilder {
         var guides: [Guide] = []
         for sideSign: Float in [-1, 1] {
             for _ in 0..<14 {
-                let phi = sideSign * (1.08 + 0.12 * Float(rng.next()))
-                let el = (14 + 8 * Float(rng.next())) * .pi / 180
-                let n = direction(phi: phi, el: el)
-                let root = center + n * map.radius(phi: phi, el: el)
-                let out = simd_normalize(SIMD3(n.x, 0, n.z))
-                let phase = Float(rng.next()) * 2 * .pi
-                var pts = [root]
+                let phi: Float = sideSign * (1.08 + 0.12 * Float(rng.next()))
+                let elDegrees: Float = 14 + 8 * Float(rng.next())
+                let el: Float = elDegrees * Float.pi / 180
+                let n: SIMD3<Float> = direction(phi: phi, el: el)
+                let root: SIMD3<Float> = center + n * map.radius(phi: phi, el: el)
+                let out: SIMD3<Float> = simd_normalize(SIMD3<Float>(n.x, 0, n.z))
+                let phase: Float = Float(rng.next()) * 2 * Float.pi
+                var pts: [SIMD3<Float>] = [root]
                 let steps = 16
                 for k in 1...steps {
-                    let t = Float(k) / Float(steps)
-                    var p = root + SIMD3(0, -1.7 * t, 0.25 * t) + out * (0.14 + 0.06 * sin(t * 10 + phase))
+                    let t: Float = Float(k) / Float(steps)
+                    let fall: SIMD3<Float> = SIMD3<Float>(0, -1.7 * t, 0.25 * t)
+                    let reach: Float = 0.14 + 0.06 * sin(t * 10 + phase)
+                    var p: SIMD3<Float> = root + fall + out * reach
                     p = pushOut(p, map: map, lift: 0.05)
                     pts.append(p)
                 }
@@ -255,19 +290,26 @@ enum HairBuilder {
             let n = g.points.count
             let rootNormal = simd_normalize(g.points[0] - center)
             for c in 0...g.children {
-                let offset = c == 0 ? .zero : disk(around: rootNormal, radius: g.spread, rng: &rng)
+                let offset: SIMD3<Float> = c == 0 ? SIMD3<Float>(0, 0, 0) : disk(around: rootNormal, radius: g.spread, rng: &rng)
                 var pts: [SIMD3<Float>] = []
                 pts.reserveCapacity(n)
                 for (i, gp) in g.points.enumerated() {
-                    let t = Float(i) / Float(max(1, n - 1))
-                    let jitter = SIMD3(Float(rng.next()) - 0.5, Float(rng.next()) - 0.5, Float(rng.next()) - 0.5) * g.frizz * t
-                    var p = gp + offset * (1 - g.clump * pow(t, 0.8)) + jitter
+                    let t: Float = Float(i) / Float(max(1, n - 1))
+                    let jx: Float = Float(rng.next()) - 0.5
+                    let jy: Float = Float(rng.next()) - 0.5
+                    let jz: Float = Float(rng.next()) - 0.5
+                    let jitter: SIMD3<Float> = SIMD3<Float>(jx, jy, jz) * (g.frizz * t)
+                    let pull: Float = 1 - g.clump * pow(t, 0.8)
+                    var p: SIMD3<Float> = gp + offset * pull + jitter
                     if g.collide { p = pushOut(p, map: map, lift: 0.012) }
                     pts.append(p)
                 }
-                let tipCut = Int(Float(n) * Float(rng.next()) * 0.15)              // uneven ends
-                strands.append(Strand(points: Array(pts.prefix(max(2, n - tipCut))), width: g.width * (0.8 + 0.4 * Float(rng.next())),
-                                      tint: 0.85 + 0.3 * Float(rng.next())))
+                let cut: Float = Float(n) * Float(rng.next()) * 0.15
+                let tipCut: Int = Int(cut)                                            // uneven ends
+                let kept: [SIMD3<Float>] = Array(pts.prefix(max(2, n - tipCut)))
+                let widthScale: Float = 0.8 + 0.4 * Float(rng.next())
+                let tint: Float = 0.85 + 0.3 * Float(rng.next())
+                strands.append(Strand(points: kept, width: g.width * widthScale, tint: tint))
             }
         }
         return strands
@@ -295,10 +337,10 @@ enum HairBuilder {
                 var normal = simd_normalize(simd_cross(side, tangent))
                 if simd_dot(normal, out) < 0 { normal = -normal }
                 let t = Float(i) / Float(n - 1)
-                let w = s.width * (1 - 0.85 * t) * 0.5
+                let w: Float = s.width * (1 - 0.85 * t) * 0.5
                 pos.append(p - side * w); pos.append(p + side * w)
                 nor.append(normal); nor.append(normal)
-                var c = mix(rootC, tipC, pow(t, 1.2)) * s.tint
+                var c: SIMD4<Float> = mixV(rootC, tipC, pow(t, 1.2)) * s.tint
                 c.w = 1
                 col.append(c); col.append(c)
             }
@@ -324,7 +366,8 @@ enum HairBuilder {
         let minSin = sin(-40 * Float.pi / 180)
         while out.count < count {
             let phi = Float(rng.next()) * 2 * .pi - .pi
-            let el = asin(minSin + (1 - minSin) * Float(rng.next()))
+            let span: Float = 1 - minSin
+            let el: Float = asin(minSin + span * Float(rng.next()))
             if el > hairline(phi: phi, style: style) + 0.02 { out.append((phi, el)) }
         }
         // Extra-dense roots along the hairline so the edge reads as a soft, full hairline.
@@ -343,7 +386,8 @@ enum HairBuilder {
             let eh = hairline(phi: phi, style: style)
             let s = 1 - Float(min(i, rows)) / Float(rows)
             let el = eh + (.pi / 2 - eh) * s
-            let r = map.radius(phi: phi, el: el) + (i > rows ? -0.04 : 0.008)
+            let edge: Float = i > rows ? -0.04 : 0.008
+            let r: Float = map.radius(phi: phi, el: el) + edge
             return center + direction(phi: phi, el: el) * r
         }
     }
@@ -395,19 +439,40 @@ enum HairBuilder {
     }
 
     private static func disk(around n: SIMD3<Float>, radius: Float, rng: inout RNG) -> SIMD3<Float> {
-        let a = simd_normalize(simd_cross(n, abs(n.y) < 0.9 ? SIMD3(0, 1, 0) : SIMD3(1, 0, 0)))
-        let b = simd_cross(n, a)
-        let r = radius * Float(rng.next()).squareRoot(), th = Float(rng.next()) * 2 * .pi
-        return a * (r * cos(th)) + b * (r * sin(th))
+        let helper: SIMD3<Float> = abs(n.y) < 0.9 ? SIMD3<Float>(0, 1, 0) : SIMD3<Float>(1, 0, 0)
+        let a: SIMD3<Float> = simd_normalize(simd_cross(n, helper))
+        let b: SIMD3<Float> = simd_cross(n, a)
+        let r: Float = radius * Float(rng.next()).squareRoot()
+        let th: Float = Float(rng.next()) * 2 * Float.pi
+        let along: SIMD3<Float> = a * (r * cos(th))
+        let across: SIMD3<Float> = b * (r * sin(th))
+        return along + across
     }
 
     private static func catmullRom(_ pts: [SIMD3<Float>], _ t: Float) -> SIMD3<Float> {
-        let f = min(max(t, 0), 0.9999) * Float(pts.count - 1)
-        let i = Int(f), u = f - Float(i)
-        let p0 = pts[max(i - 1, 0)], p1 = pts[i], p2 = pts[min(i + 1, pts.count - 1)], p3 = pts[min(i + 2, pts.count - 1)]
-        let u2 = u * u, u3 = u2 * u
-        let a = 2 * p1, b = p2 - p0, c = 2 * p0 - 5 * p1 + 4 * p2 - p3, d = -p0 + 3 * p1 - 3 * p2 + p3
-        return 0.5 * (a + b * u + c * u2 + d * u3)
+        let clamped: Float = min(max(t, 0), 0.9999)
+        let f: Float = clamped * Float(pts.count - 1)
+        let i: Int = Int(f)
+        let u: Float = f - Float(i)
+        let last: Int = pts.count - 1
+        let p0: SIMD3<Float> = pts[max(i - 1, 0)]
+        let p1: SIMD3<Float> = pts[i]
+        let p2: SIMD3<Float> = pts[min(i + 1, last)]
+        let p3: SIMD3<Float> = pts[min(i + 2, last)]
+        let u2: Float = u * u
+        let u3: Float = u2 * u
+        // Catmull-Rom: 0.5 * (2·p1 + (p2 − p0)·u + (2·p0 − 5·p1 + 4·p2 − p3)·u² + (−p0 + 3·p1 − 3·p2 + p3)·u³)
+        let a: SIMD3<Float> = p1 * 2
+        let b: SIMD3<Float> = p2 - p0
+        let c1: SIMD3<Float> = p0 * 2 - p1 * 5
+        let c2: SIMD3<Float> = p2 * 4 - p3
+        let c: SIMD3<Float> = c1 + c2
+        let d1: SIMD3<Float> = p1 * 3 - p0
+        let d2: SIMD3<Float> = p3 - p2 * 3
+        let d: SIMD3<Float> = d1 + d2
+        let first: SIMD3<Float> = a + b * u
+        let second: SIMD3<Float> = c * u2 + d * u3
+        return (first + second) * 0.5
     }
 
     static func sphericalAngles(_ d: SIMD3<Float>) -> (phi: Float, el: Float) {
@@ -424,8 +489,13 @@ enum HairBuilder {
     }
 
     private static func gauss(_ d: Float, _ s: Float) -> Float { exp(-(d * d) / (s * s)) }
-    private static func mix<T: SIMD>(_ a: T, _ b: T, _ t: T.Scalar) -> T where T.Scalar: FloatingPoint { a + (b - a) * t }
-    private static func mix(_ a: Float, _ b: Float, _ t: Float) -> Float { a + (b - a) * t }
+    // Separate names (not one overloaded `mix`): overloads mixed with literals are what make older
+    // Swift compilers give up with "unable to type-check this expression in reasonable time".
+    private static func mixV<T: SIMD>(_ a: T, _ b: T, _ t: T.Scalar) -> T where T.Scalar: FloatingPoint {
+        let delta: T = b - a
+        return a + delta * t
+    }
+    private static func mixF(_ a: Float, _ b: Float, _ t: Float) -> Float { a + (b - a) * t }
 
     struct RNG {
         var state: UInt64

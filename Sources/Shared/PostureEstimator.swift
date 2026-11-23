@@ -27,8 +27,8 @@ struct PostureEstimator {
     /// The neutral pose as saved by calibration; adaptation never strays more than `adaptCap` from it.
     let savedNeutral: SIMD3<Double>
 
-    private var upFilter = ZUPTKalman()
-    private var forwardFilter = ZUPTKalman()
+    private var upFilter: ZUPTKalman = ZUPTKalman()
+    private var forwardFilter: ZUPTKalman = ZUPTKalman()
     private var stillness = StillnessDetector()
     private var lowPassed = SIMD3<Double>.zero
     private var motionStartGravity: SIMD3<Double>?

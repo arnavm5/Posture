@@ -10,8 +10,8 @@ import simd
 /// corrects position and teaches it the accelerometer bias. The position variance doubles as an
 /// honest confidence estimate (`sigma`).
 struct ZUPTKalman {
-    private(set) var x = SIMD3<Double>.zero          // p (m), v (m/s), b (m/s²)
-    private(set) var P = simd_double3x3(diagonal: SIMD3(1e-6, 1e-4, 0.05 * 0.05))
+    private(set) var x: SIMD3<Double> = SIMD3<Double>(0, 0, 0)   // p (m), v (m/s), b (m/s²)
+    private(set) var P: simd_double3x3 = simd_double3x3(diagonal: SIMD3<Double>(1e-6, 1e-4, 0.0025))
 
     var position: Double { x.x }
     var velocity: Double { x.y }
