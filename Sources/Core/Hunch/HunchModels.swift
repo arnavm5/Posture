@@ -456,6 +456,12 @@ enum HunchTrainer {
             .jitter30: "lots of small head movements|very little head movement",
             .pitchRange120: "head angle varying a lot|head angle fixed",
             .stillness120: "holding still for long stretches|moving often", .standing: "standing|sitting",
+            .trunk30: "upper body leaning or curled forward|upper body upright or back",
+            .neck30: "neck bent forward|neck bent back",
+            .sink30: "head sunk lower|head held up",
+            .trunkTrend120: "upper body curling forward over 2 min|upper body straightening over 2 min",
+            .trunkVsUsual: "upper body further forward than your usual|upper body further back than your usual",
+            .compensation120: "body forward with chin pulled up|no body-forward chin-up pattern",
         ]
         for (f, s) in extra { w[HunchFeatureSet.legacyCount + f.rawValue] = s }
         return w

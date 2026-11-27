@@ -1,17 +1,39 @@
 import AppKit
+import AVFoundation
 import Foundation
 
-/// Soft bell sounds, synthesized in the app (so they're consistent and play even when
-/// notification sounds are muted).
+/// The app's own alert sounds (played by the app, so they work even when notification sounds are muted):
+/// a soft synthesized bell for "you've started slouching", and a spoken word for the slouch alert.
 @MainActor
 enum Chime {
     /// One gentle, short ding: "you've started slouching".
     static let gentle = sound(notes: [(1318.5, 0)], length: 0.9, volume: 0.4)             // E6
-    /// Two rising notes, a little brighter: "you've been slouching for a while".
-    static let alert = sound(notes: [(987.8, 0), (1318.5, 0.16)], length: 1.3, volume: 0.45)  // B5 → E6
+    /// Said out loud (text to speech) with the slouch alert: "you've been slouching for a while".
+    static let alertWord = "grumble"
+
+    private static let speech = AVSpeechSynthesizer()
 
     static func playGentle() { play(gentle) }
-    static func playAlert() { play(alert) }
+
+    /// Says the alert word. Returns false if it can't (no speech voice installed), so the caller can fall
+    /// back to the notification's own sound rather than stay silent.
+    @discardableResult
+    static func playAlert() -> Bool {
+        guard canSpeak else { return false }
+        if speech.isSpeaking { speech.stopSpeaking(at: .immediate) }
+        speech.speak(alertUtterance())
+        return true
+    }
+
+    /// At least one text-to-speech voice is installed.
+    static var canSpeak: Bool { !AVSpeechSynthesisVoice.speechVoices().isEmpty }
+
+    /// The spoken alert, in the system voice.
+    static func alertUtterance() -> AVSpeechUtterance {
+        let u = AVSpeechUtterance(string: alertWord)
+        u.volume = 0.7
+        return u
+    }
 
     private static func play(_ s: NSSound?) {
         guard let s else { return }
@@ -66,6 +88,14 @@ struct SlouchDingRule {
     private var goodRun = 0
     private var armed = true
     private(set) var lastDing: Date?
+
+    /// Call instead of `tick` on a second the slouch clock is holding (looking down within its grace): it
+    /// isn't slouching, so a slouch after it is detected afresh and waits its full `holdSeconds`; it isn't
+    /// sitting well either, so re-arming needs `resetAfterGood` seconds of good posture in a row after it.
+    mutating func hold() {
+        run = 0
+        goodRun = 0
+    }
 
     /// Call once per second. Returns true when the ding should play.
     mutating func tick(slouching: Bool, now: Date) -> Bool {

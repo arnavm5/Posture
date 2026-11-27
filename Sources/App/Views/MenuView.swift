@@ -59,6 +59,10 @@ struct MenuView: View {
                 if let step = m.calibrationStep {
                     Text("Step \(step.index) of \(step.of)").font(.caption).foregroundStyle(.secondary)
                 }
+                if let left = m.lookDownRemaining {
+                    Text("Looking down. Counts as slouching in \(left)s")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
                 if let p = m.recoveryProgress {
                     Text("Sitting well. Slouch timer resets in \(Int((1 - p) * m.recoverySeconds))s")
                         .font(.caption).foregroundStyle(.green)
@@ -98,9 +102,9 @@ struct MenuView: View {
             if m.state == .good || m.state == .slouching {
                 row("Tilt", String(format: "%d° fwd · %d° %@", Int(m.reading.pitch), Int(abs(m.reading.roll)),
                                    m.reading.roll >= 0 ? "left" : "right"),
-                    bad: m.reading.pitch > m.maxForwardTilt || abs(m.reading.roll) > m.maxSideTilt)
+                    bad: m.readingFlags.tilt)
                 row("Head (est.)", String(format: "%+.1f fwd · %+.1f low cm", m.reading.forwardCM, m.reading.dropCM),
-                    bad: m.reading.forwardCM > m.maxShiftCM || m.reading.dropCM > m.maxShiftCM)
+                    bad: m.readingFlags.head)
             }
             if m.airPodsStreaming {
                 HStack {
@@ -161,10 +165,16 @@ struct MenuView: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .disabled(m.state == .calibrating)
             caption("Sitting or standing is detected automatically; tap to correct it.")
             Button(m.isCalibrated ? "Recalibrate (\(m.deskMode.label.lowercased()))" : "Calibrate") { m.calibrate() }
                 .disabled(m.state == .calibrating)
-            caption("About 15 s: sit or stand tall, look down and back up, turn left and right, tilt each ear to its shoulder. Sitting and standing each keep their own calibration.")
+            caption(m.slouchTestOnCalibrate
+                    ? "About 25 s: sit or stand tall, look down and back up, slouch and sit tall again, turn left and right, tilt each ear to its shoulder. Sitting and standing each keep their own calibration."
+                    : "About 15 s: sit or stand tall, look down and back up, turn left and right, tilt each ear to its shoulder. Sitting and standing each keep their own calibration.")
+            Toggle("Include a quick slouch test", isOn: $m.slouchTestOnCalibrate)
+                .disabled(m.state == .calibrating)      // the steps are fixed when calibration starts
+            caption("Slouch the way you usually do, then sit tall again. Each calibration sets your forward-tilt and head-shift limits between the two (replacing the current ones).")
             Toggle("Follow small AirPod shifts", isOn: $m.followAirPodShifts)
             caption(m.followAirPodShifts
                     ? (m.neutralDriftDegrees >= 0.5
@@ -180,6 +190,9 @@ struct MenuView: View {
             Stepper("Side tilt: \(Int(m.maxSideTilt))°", value: $m.maxSideTilt, in: 5...35, step: 1)
             Stepper("Head shift: \(Int(m.maxShiftCM)) cm", value: $m.maxShiftCM, in: 2...15, step: 1)
             Stepper("Alert after: \(Int(m.alertMinutes)) min", value: $m.alertMinutes, in: 1...60, step: 1)
+            Stepper(m.lookDownGraceSeconds < 1 ? "Looking down: counts right away" : "Looking down is OK for: \(Int(m.lookDownGraceSeconds)) s",
+                    value: $m.lookDownGraceSeconds, in: 0...180, step: 5)
+            caption("Your head tipped forward with no real movement (like glancing at the keyboard) only counts as slouching once it lasts this long.")
             caption("Tilt and shift limits apply to \(m.deskMode.label.lowercased()); sitting and standing have their own.")
         }
     }
@@ -190,7 +203,7 @@ struct MenuView: View {
             Stepper(m.dingDelaySeconds < 1 ? "Ding: right away" : "Ding after: \(Int(m.dingDelaySeconds)) s of slouching",
                     value: $m.dingDelaySeconds, in: 0...30, step: 1)
                 .disabled(!m.dingOnSlouch)
-            soundToggle("Chime with the slouch alert", $m.chimeOnAlert) { Chime.playAlert() }
+            soundToggle("Say \"\(Chime.alertWord)\" with the slouch alert", $m.chimeOnAlert) { Chime.playAlert() }
             Toggle("Ask \"am I hunched?\" now and then", isOn: $m.hunchCheckIns)
             HStack {
                 Button("Test alert") { m.sendTestNotification() }
@@ -202,10 +215,6 @@ struct MenuView: View {
 
     private var general: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Picker("Mannequin", selection: $m.style) {
-                ForEach(MannequinStyle.allCases) { Text($0.label).tag($0) }
-            }
-            .pickerStyle(.segmented)
             Toggle("Show live status in the notch", isOn: $m.showInNotch)
             Toggle("Launch at login", isOn: Binding(get: { m.launchAtLogin }, set: { m.launchAtLogin = $0 }))
         }

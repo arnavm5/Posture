@@ -9,6 +9,10 @@ struct PostureReading {
     var dropCM: Double = 0        // + = head lower than neutral (sinking into the chair)
     var forwardSigmaCM: Double = 0
     var dropSigmaCM: Double = 0
+    /// The part of `forwardCM` / `dropCM` that's the head really moving (the rest comes from tipping it on
+    /// the neck, which a glance at the keyboard does too).
+    var forwardMoveCM: Double = 0
+    var dropMoveCM: Double = 0
 }
 
 /// Estimates head orientation *and position* from AirPods motion alone.
@@ -245,6 +249,7 @@ struct PostureEstimator {
         let drop = Self.neckLever * (1 - cos(tilt)) - shiftUp
         return PostureReading(tilt: tilt * 180 / .pi, pitch: pitch * 180 / .pi, roll: roll * 180 / .pi,
                               forwardCM: fwd * 100, dropCM: drop * 100,
-                              forwardSigmaCM: forwardFilter.sigma * 100, dropSigmaCM: upFilter.sigma * 100)
+                              forwardSigmaCM: forwardFilter.sigma * 100, dropSigmaCM: upFilter.sigma * 100,
+                              forwardMoveCM: shiftForward * 100, dropMoveCM: -shiftUp * 100)
     }
 }

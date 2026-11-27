@@ -13,22 +13,26 @@ import Foundation
 ///  - **Your model** (`HunchClassifier`): once you've labelled enough moments, a model trained on
 ///    *your* answers takes over: gradient-boosted trees or logistic regression, whichever predicts
 ///    your held-out answers better. It falls back to the rules when it's unsure.
+///
+/// Either way the per-second verdict is only evidence: `HunchStateFilter` turns it into a probability that
+/// you're hunched, which has to build up (about `secondsToFlag` for ordinary evidence) before you're flagged.
 struct HunchDetector {
-    /// How long the pattern must last before it counts as hunching.
-    var secondsToFlag = 60
+    /// How long ordinary hunch evidence must last before it counts as hunching.
+    var secondsToFlag = 60 { didSet { state = HunchStateFilter(secondsToFlag: secondsToFlag) } }
     /// Sitting or standing (a model input).
     var deskMode: DeskMode = .sitting
 
     private(set) var history: [PostureReading] = []      // 1 Hz, newest last
-    private(set) var hunchySeconds = 0
-    private var calmSeconds = 0
+    private(set) var state = HunchStateFilter()
     private(set) var lastProbability: Double?            // model output, if a model is in use
     private(set) var lastThreshold = 0.5
     private(set) var lastRuleSaysHunch = false
 
     static let maxHistory = HunchFeatureSet.traceLength
 
-    var isHunched: Bool { hunchySeconds >= secondsToFlag }
+    var isHunched: Bool { state.isHunched }
+    /// How likely you're hunched right now (0…1), from the evidence so far.
+    var hunchProbability: Double { state.probability }
 
     /// Is this a good moment to ask "are you hunched?" (the answer would teach the model the most)?
     var isUncertain: Bool {
@@ -40,8 +44,7 @@ struct HunchDetector {
 
     mutating func reset() {
         history = []
-        hunchySeconds = 0
-        calmSeconds = 0
+        state.reset()
         lastProbability = nil
         lastRuleSaysHunch = false
     }
@@ -54,24 +57,16 @@ struct HunchDetector {
         guard let legacy = legacyFeatures() else { return false }
 
         lastRuleSaysHunch = Self.ruleSaysHunch(legacy)
-        var hunchy = lastRuleSaysHunch
+        var evidence: Double = lastRuleSaysHunch ? 1 : -1
         if let model, let f = features() {
             let p = model.probability(f)
             lastProbability = p
             lastThreshold = model.threshold
-            if p > model.threshold + 0.1 { hunchy = true } else if p < model.threshold - 0.1 { hunchy = false }  // unsure: rules
+            if let e = HunchStateFilter.modelEvidence(probability: p, threshold: model.threshold) { evidence = e }  // unsure: rules
         } else {
             lastProbability = nil
         }
-
-        if hunchy {
-            hunchySeconds += 1
-            calmSeconds = 0
-        } else {
-            calmSeconds += 1
-            if calmSeconds >= 10 { hunchySeconds = 0 }        // brief breaks don't reset it
-        }
-        return isHunched
+        return state.add(evidence: evidence)
     }
 
     /// Full model input for the moment `lead` seconds ago (nil until there's 30 s of data).
@@ -117,6 +112,8 @@ enum HunchExtra: Int, CaseIterable {
     case chinPoke120, lookingDown120
     case jitter30, pitchRange120, stillness120
     case standing
+    // From the body model (`BodyPoseFilter`): trunk vs. neck, not just head.
+    case trunk30, neck30, sink30, trunkTrend120, trunkVsUsual, compensation120
 }
 
 enum HunchFeatureSet {
@@ -197,6 +194,18 @@ enum HunchFeatureSet {
         let d120 = zip(w120.dropFirst(), w120).map { abs($0.pitch - $1.pitch) }
         e[HunchExtra.stillness120.rawValue] = d120.isEmpty ? 0 : Double(d120.filter { $0 < 0.3 }.count) / Double(d120.count)
         e[HunchExtra.standing.rawValue] = deskMode.map { $0 == .standing ? 1 : 0 } ?? .nan
+
+        let body = BodyPoseFilter.poses(h)
+        let trunk: [Double] = body.map(\.trunkDeg)
+        let b30 = Array(body.suffix(30)), b120 = Array(body.suffix(120))
+        let trunk30: Double = mean(b30.map(\.trunkDeg))
+        e[HunchExtra.trunk30.rawValue] = trunk30
+        e[HunchExtra.neck30.rawValue] = mean(b30.map(\.neckDeg))
+        e[HunchExtra.sink30.rawValue] = mean(b30.map(\.sinkCM))
+        e[HunchExtra.trunkTrend120.rawValue] = slopePerMinute(b120.map(\.trunkDeg))
+        e[HunchExtra.trunkVsUsual.rawValue] = trunk30 - median(trunk)
+        let compensating = b120.filter { $0.trunkDeg > 3 && $0.neckDeg < -2 }.count
+        e[HunchExtra.compensation120.rawValue] = b120.isEmpty ? 0 : Double(compensating) / Double(b120.count)
         return e
     }
 

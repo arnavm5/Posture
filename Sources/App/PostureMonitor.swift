@@ -42,9 +42,7 @@ enum PostureState: Equatable {
 final class PostureMonitor: ObservableObject {
     static let log = Logger(subsystem: "local.posture.app", category: "Posture")
     // Live readout
-    @Published private(set) var state: PostureState = .noAirPods {
-        didSet { if state != oldValue { headScene.setSlouching(state == .slouching) } }
-    }
+    @Published private(set) var state: PostureState = .noAirPods
     @Published private(set) var reading = PostureReading()
     @Published private(set) var slouchReasons: [String] = []
     @Published private(set) var slouchSeconds = 0
@@ -69,6 +67,10 @@ final class PostureMonitor: ObservableObject {
     @Published private(set) var neutralDriftDegrees = 0.0
     // Hunched-shoulder detection (head pattern + your personal model)
     @Published private(set) var isHunched = false
+    /// Head tipped forward only (e.g. at the keyboard): seconds left before it counts as slouching.
+    @Published private(set) var lookDownRemaining: Int?
+    /// Looking down counts as slouching right now (its grace has run out this episode).
+    @Published private(set) var lookingDownCounts = false
     @Published private(set) var hunchSummary = ""
     /// Short confirmation after you label a moment (clears itself after a few seconds).
     @Published private(set) var hunchFeedback: (text: String, ok: Bool)?
@@ -98,14 +100,10 @@ final class PostureMonitor: ObservableObject {
     /// Seconds after a slouch is detected before the gentle ding plays.
     @AppStorage("dingDelay") var dingDelaySeconds: Double = 1 { willSet { objectWillChange.send() } }
     @AppStorage("chimeOnAlert") var chimeOnAlert = true { willSet { objectWillChange.send() } }
-
-    let headScene = HeadScene()
-    @Published var style: MannequinStyle = MannequinStyle(rawValue: UserDefaults.standard.string(forKey: "mannequinStyle") ?? "") ?? .male {
-        didSet {
-            UserDefaults.standard.set(style.rawValue, forKey: "mannequinStyle")
-            headScene.setStyle(style)
-        }
-    }
+    /// Calibration includes the quick slouch test that sets your limits.
+    @AppStorage("slouchTestOnCalibrate") var slouchTestOnCalibrate = true { willSet { objectWillChange.send() } }
+    /// How long the head may stay tipped forward (with no real movement) before it counts as slouching.
+    @AppStorage("lookDownGraceSeconds") var lookDownGraceSeconds: Double = 30 { willSet { objectWillChange.send() } }
 
     private let motion = HeadphoneMotion()
     private var spikeFilter = SpikeFilter()
@@ -123,22 +121,13 @@ final class PostureMonitor: ObservableObject {
     private var lastMotionDate: Date?
     static let positionResetGap: TimeInterval = 120
 
-    // Calibration recording
-    private enum Phase: Int, CaseIterable { case neutral, lookDown, turn, tilt }
-    private static let phasePrompts: [Phase: (String, Double)] = [
-        .neutral: ("Sit up straight and look at your screen…", 3),
-        .lookDown: ("Slowly look down at your keyboard, then back up…", 4),
-        .turn: ("Turn your head slowly left, then right…", 4),
-        .tilt: ("Tilt your ear toward each shoulder…", 4),
-    ]
-    private var phase: Phase?
-    private var neutralSamples: [SIMD3<Double>] = []
-    private var lookDownSamples: [SIMD3<Double>] = []
-    private var leverFit = LeverArmFit()
+    // Calibration: the running sequence (all its logic is in Core), and a counter so a stale step timer is ignored.
+    private var session: CalibrationSession?
     private var calibrationRun = 0
 
     private var slouchTimer = SlouchTimer()
     private var dingRule = SlouchDingRule()
+    private var lookDown = LookDownGrace()
     private var hunch = HunchDetector()
     private var hunchLearner = HunchLearner()
     private var lastCheckIn = Date()          // wait a while after launch before the first question
@@ -154,7 +143,6 @@ final class PostureMonitor: ObservableObject {
         if let cal = HeadCalibration.best(for: .unknown, mode: deskMode) { apply(cal) }
         // Check-in buttons and answers must work from launch (only the permission prompt is deferred).
         Notifier.configure()
-        headScene.setStyle(style)
         retrainHunchModel()           // train from saved answers without blocking launch
         hunchSummary = hunchLearner.summary
         hunchReport = hunchLearner.report
@@ -190,10 +178,9 @@ final class PostureMonitor: ObservableObject {
     private func onMotion(_ s: HeadphoneMotion.Sample) {
         if let last = lastMotionDate, Date().timeIntervalSince(last) > Self.positionResetGap { estimator?.resetPosition() }
         lastMotionDate = Date()
-        headScene.update(s.attitude, gravity: s.gravity, calibration: estimator?.calibration)
         if s.earbud != activeEarbud {
             // Mixing two earbuds' readings would produce a wrong calibration.
-            if phase != nil { failCalibration("Your AirPods switched earbuds during calibration. Try again.") }
+            if session != nil { failCalibration("Your AirPods switched earbuds during calibration. Try again.") }
             switchEarbud(to: s.earbud)
         }
 
@@ -216,7 +203,7 @@ final class PostureMonitor: ObservableObject {
         let world = worldFrame.toWorld(k.translational, gravity: g, rotation: k.rotation)
         positionTracker.ingest(worldAccel: world, rotationRate: simd_length(k.omega), dt: k.dt)
         deskTracker.ingest(worldAccel: world, rotationRate: simd_length(k.omega), dt: k.dt)
-        if phase == nil, deskDetector.update(heightCM: deskTracker.upCM, moving: deskTracker.moving) {
+        if session == nil, deskDetector.update(heightCM: deskTracker.upCM, moving: deskTracker.moving) {
             deskModeChanged()
         }
         if Date().timeIntervalSince(lastPositionPublish) > 0.1 {
@@ -228,15 +215,14 @@ final class PostureMonitor: ObservableObject {
         }
 
         // 3. Calibration recording, or posture estimation.
-        if let phase {
-            record(phase, k)
+        if session != nil {
+            record(k)
             return
         }
         guard var est = estimator, let sg = smoothedGravity else { return }
         est.ingest(gravity: g, translational: k.translational, omega: k.omega, dt: k.dt)
         estimator = est
         let r = est.reading(gravity: sg)
-        headScene.setOffset(forwardCM: r.forwardCM, dropCM: r.dropCM)
         if Date().timeIntervalSince(lastPublish) > 0.1 {      // UI at 10 Hz
             reading = r
             lastPublish = Date()
@@ -259,7 +245,7 @@ final class PostureMonitor: ObservableObject {
 
     /// You corrected the sitting/standing detection by hand.
     func setDeskMode(_ mode: DeskMode) {
-        guard mode != deskMode else { return }
+        guard mode != deskMode, session == nil else { return }     // a calibration belongs to one position
         deskDetector.set(mode, heightCM: deskTracker.upCM)
         deskModeChanged()
     }
@@ -308,7 +294,7 @@ final class PostureMonitor: ObservableObject {
         compensator.lever = cal.leverArm
     }
 
-    // MARK: Calibration (4 steps)
+    // MARK: Calibration
 
     func calibrate() {
         guard airPodsStreaming else { calibrationError = "Put your AirPods in first."; return }
@@ -316,57 +302,66 @@ final class PostureMonitor: ObservableObject {
         calibrationError = nil
         calibrationHint = nil
         calibrationRun += 1
-        neutralSamples = []
-        lookDownSamples = []
-        leverFit = LeverArmFit()
-        compensator.lever = .zero          // fit uses raw accel; no compensation while calibrating
+        session = CalibrationSession(slouchTest: slouchTestOnCalibrate, earbud: activeEarbud, deskMode: deskMode)
         state = .calibrating
-        begin(.neutral, run: calibrationRun)
+        begin(run: calibrationRun)
     }
 
-    private func begin(_ p: Phase, run: Int) {
-        phase = p
-        let (prompt, seconds) = Self.phasePrompts[p]!
-        calibrationPrompt = prompt
-        calibrationStep = (p.rawValue + 1, Phase.allCases.count)
-        if p == .lookDown { headScene.recenter() }
-        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
-            guard let self, self.calibrationRun == run, self.phase == p else { return }
-            if let next = Phase(rawValue: p.rawValue + 1) { self.begin(next, run: run) } else { self.finishCalibration() }
+    /// Shows the session's current step and starts its clock.
+    private func begin(run: Int) {
+        guard let s = session else { return }
+        compensator.lever = s.compensatorLever
+        calibrationPrompt = s.prompt
+        calibrationStep = s.progress
+        let index = s.index
+        DispatchQueue.main.asyncAfter(deadline: .now() + s.step.seconds) { [weak self] in
+            guard let self, self.calibrationRun == run, self.session?.index == index else { return }
+            self.advance(run: run)
         }
     }
 
-    private func record(_ p: Phase, _ k: HeadKinematics) {
-        switch p {
-        case .neutral: neutralSamples.append(k.gravity)
-        case .lookDown: lookDownSamples.append(k.gravity); leverFit.add(k)
-        case .turn, .tilt: leverFit.add(k)
+    private func advance(run: Int) {
+        guard var s = session else { return }
+        let result = s.advance()
+        session = s
+        switch result {
+        case .next: begin(run: run)
+        case .finished: finishCalibration()
+        case .failed(let f): failCalibration(f.message(deskMode: deskMode))
         }
+    }
+
+    private func record(_ k: HeadKinematics) {
+        guard var s = session else { return }
+        let doneEarly = s.record(k)
+        session = s
+        if doneEarly { advance(run: calibrationRun) }
     }
 
     private func finishCalibration() {
-        phase = nil
+        guard let s = session else { return }
+        session = nil
         calibrationPrompt = nil
         calibrationStep = nil
-        switch HeadCalibration.solve(neutral: neutralSamples, lookDown: lookDownSamples, leverFit: leverFit,
-                                     earbud: activeEarbud, deskMode: deskMode) {
-        case .success(let cal):
-            cal.save()
-            apply(cal)
+        switch s.finish(currentTiltLimit: maxForwardTilt, currentShiftCM: maxShiftCM) {
+        case .success(let done):
+            if let o = done.slouchTest {
+                Self.log.notice("Slouch test: tilt \(o.slouchTiltDegrees, format: .fixed(precision: 1))°, shift \(o.slouchShiftCM, format: .fixed(precision: 1)) cm, neutral repeat \(o.neutralRepeatDegrees, format: .fixed(precision: 1))°")
+            }
+            if let t = done.forwardTilt { maxForwardTilt = t }
+            if let c = done.shiftCM { maxShiftCM = c }
+            done.calibration.save()
+            apply(done.calibration)
             resetStreak()
             state = .good
-            if !cal.leverFitted {
-                calibrationHint = "Calibrated. For the most accurate position tracking, recalibrate and make the turn and tilt moves a little bigger."
-            }
-        case .failure(.noSignal):
-            failCalibration("Lost the AirPods signal. Try again.")
-        case .failure(.didNotLookDown):
-            failCalibration("Didn't see you look down. Try again and tip your head further.")
+            calibrationHint = done.notes.isEmpty ? nil : "Calibrated. " + done.notes.joined(separator: " ")
+        case .failure(let f):
+            failCalibration(f.message(deskMode: deskMode))
         }
     }
 
     private func failCalibration(_ message: String) {
-        phase = nil
+        session = nil
         calibrationPrompt = nil
         calibrationStep = nil
         calibrationError = message
@@ -418,51 +413,66 @@ final class PostureMonitor: ObservableObject {
     private func tick() {
         let now = Date()
         rollStatsIfNewDay(now)
-        if phase != nil { return }
+        if session != nil { clearLookDown(); return }
 
         if let until = pausedUntil {
-            if now < until { state = .paused; return }
+            if now < until { state = .paused; clearLookDown(); return }
             pausedUntil = nil
         }
-        guard airPodsStreaming else { state = .noAirPods; return }   // streak pauses, doesn't reset
-        guard estimator != nil else { state = .needsCalibration; return }
+        guard airPodsStreaming else { state = .noAirPods; clearLookDown(); return }   // streak pauses, doesn't reset
+        guard estimator != nil else { state = .needsCalibration; clearLookDown(); return }
 
         if deskMode == .standing { standingSecondsToday += 1 } else { sittingSecondsToday += 1 }
-        var reasons = rules.reasons(for: reading)
         hunch.deskMode = deskMode
         // Your personal model only takes over once it clearly beats chance on held-out answers.
         isHunched = hunch.add(reading, model: hunchLearner.classifier.flatMap { $0.isUsable ? $0 : nil })
-        if isHunched { reasons.append("shoulders hunched") }
+        lookDown.graceSeconds = Int(lookDownGraceSeconds)
+        let verdict = PostureTick.assess(reading, rules: rules, grace: &lookDown, hunched: isHunched)
+        let reasons = verdict.reasons, signal = verdict.signal
+        lookDownRemaining = verdict.lookDownRemaining
+        lookingDownCounts = lookDown.hasRunOut
         // While you're sitting well and still, let the neutral pose follow small AirPod shifts (capped at 4°).
-        if followAirPodShifts, reasons.isEmpty, !isHunched, estimator?.isStill == true, let sg = smoothedGravity {
+        if followAirPodShifts, reasons.isEmpty, !verdict.lookingDown, estimator?.isStill == true,
+           let sg = smoothedGravity {
             estimator?.adaptNeutral(toward: sg, dt: 1)
         }
         neutralDriftDegrees = estimator?.neutralDriftDegrees ?? 0
         slouchReasons = reasons
         maybeAskCheckIn(now)
 
-        if reasons.isEmpty { goodSecondsToday += 1 } else { badSecondsToday += 1 }
-        // A gentle ding a few seconds after a slouch is detected (not every time you brush past the limit).
-        dingRule.holdSeconds = Int(dingDelaySeconds)
-        if dingRule.tick(slouching: !reasons.isEmpty, now: now), dingOnSlouch {
-            Chime.playGentle()
-            Self.log.notice("Slouch ding (\(Int(self.dingDelaySeconds)) s after detection)")
+        // Looking down within its grace is neither: it isn't sitting well, and it doesn't count as slouching yet.
+        switch signal {
+        case .good: goodSecondsToday += 1
+        case .slouching: badSecondsToday += 1
+        case .holding: break
         }
-        slouchTimer.alertSeconds = alertSeconds
-        slouchTimer.recoverySeconds = Int(recoverySeconds)
-        let alert = slouchTimer.tick(slouching: !reasons.isEmpty)
+        // Looking down, still within its grace: the ding and the slouch clock wait (it isn't recovery).
+        var alert = false
+        if signal == .holding {
+            dingRule.hold()
+        } else {
+            // A gentle ding a few seconds after a slouch is detected (not every time you brush past the limit).
+            dingRule.holdSeconds = Int(dingDelaySeconds)
+            if dingRule.tick(slouching: signal == .slouching, now: now), dingOnSlouch {
+                Chime.playGentle()
+                Self.log.notice("Slouch ding (\(Int(self.dingDelaySeconds)) s after detection)")
+            }
+            slouchTimer.alertSeconds = alertSeconds
+            slouchTimer.recoverySeconds = Int(recoverySeconds)
+            alert = slouchTimer.tick(slouching: signal == .slouching)
+        }
         slouchSeconds = slouchTimer.slouchSeconds
-        recoveryProgress = slouchTimer.recoveryProgress
+        recoveryProgress = signal == .holding ? nil : slouchTimer.recoveryProgress   // paused, not counting down
         // Status reflects your posture *right now*; the slouch timer keeps its own (forgiving) clock.
         state = reasons.isEmpty ? .good : .slouching
 
         if alert {
             alertCount += 1
             let why = reasons.isEmpty ? "" : " (\(reasons.joined(separator: ", ")))"
-            if chimeOnAlert { Chime.playAlert() }
+            let spoke = chimeOnAlert && Chime.playAlert()     // no voice: the notification makes its sound instead
             Notifier.send(title: "Check your posture",
                           body: "You've been slouching for about \(slouchSeconds / 60) minutes\(why). Sit tall, chin back, shoulders down.",
-                          sound: !chimeOnAlert)
+                          sound: !spoke)
         }
     }
 
@@ -562,8 +572,25 @@ final class PostureMonitor: ObservableObject {
         notchFlashCount += 1          // pop the notch open so you can see it was recorded
     }
 
+    /// Not tracking right now (calibrating, paused, no AirPods…): no looking-down episode is running.
+    private func clearLookDown() {
+        lookDown.reset()
+        if lookDownRemaining != nil { lookDownRemaining = nil }
+        if lookingDownCounts { lookingDownCounts = false }
+    }
+
+    /// Which readings to highlight: body reasons always, looking-down ones once their grace has run out.
+    /// `lookingDownCounts` comes from the grace itself, so the start of a glance (before the next tick
+    /// notices it) isn't flagged.
+    var readingFlags: (tilt: Bool, head: Bool) {
+        rules.flags(for: reading, lookingDownCounts: lookingDownCounts)
+    }
+
     private func resetStreak() {
         slouchTimer.reset()
+        lookDown.reset()
+        lookDownRemaining = nil
+        lookingDownCounts = false
         slouchSeconds = 0
         recoveryProgress = nil
     }
@@ -594,7 +621,8 @@ final class PostureMonitor: ObservableObject {
         estimator = PostureEstimator(calibration: HeadCalibration(neutralGravity: g0, forward: SIMD3(0, 1, 0),
                                                                   leverArm: .zero, leverFitted: false))
         reading = PostureReading(tilt: 18, pitch: slouching ? 18 : 6, roll: 3, forwardCM: slouching ? 6.2 : 1.1,
-                                 dropCM: 0.8, forwardSigmaCM: 0.4, dropSigmaCM: 0.3)
+                                 dropCM: 0.8, forwardSigmaCM: 0.4, dropSigmaCM: 0.3,
+                                 forwardMoveCM: slouching ? 5.5 : 0, dropMoveCM: 0.2)
         state = slouching ? .slouching : .good
         slouchSeconds = slouching ? 372 : 0
         relativeUpCM = 2

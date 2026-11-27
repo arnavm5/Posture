@@ -2,8 +2,7 @@ import AppKit
 import SwiftUI
 
 /// Live posture "island" that wraps around the MacBook notch / camera housing.
-/// Collapsed: status + timer on either side of the notch. Hover (or an alert): drops open
-/// with the live 3D mannequin and your numbers.
+/// Collapsed: status + angle on either side of the notch. Hover (or an alert): drops open with your numbers.
 @MainActor
 final class NotchModel: ObservableObject {
     @Published var expanded = false
@@ -12,7 +11,7 @@ final class NotchModel: ObservableObject {
     @Published var alerting = false
 
     static let wing: CGFloat = 52
-    static let expandedSize = CGSize(width: 390, height: 285)
+    static let expandedSize = CGSize(width: 320, height: 250)
     var collapsedSize: CGSize { CGSize(width: notchWidth + 2 * Self.wing, height: notchHeight) }
 }
 
@@ -27,7 +26,7 @@ final class NotchController {
     private var forcedUntil: Date?
     private var lastAlertCount = 0
     private var lastFlashCount = 0
-    private static let panelSize = NSSize(width: 430, height: 315)
+    private static let panelSize = NSSize(width: 360, height: 280)
 
     init(monitor: PostureMonitor) {
         self.monitor = monitor
@@ -168,7 +167,6 @@ struct NotchView: View {
                 // never pushed up under the notch.
                 .frame(width: size.width, height: size.height, alignment: .top)
                 .clipped()
-                if !model.expanded && m.slouchSeconds > 0 { progressLine(width: size.width) }
             }
             .frame(width: size.width, height: size.height)
             Spacer(minLength: 0)
@@ -180,13 +178,8 @@ struct NotchView: View {
     // Collapsed wings either side of the notch.
     private var topRow: some View {
         HStack(spacing: 0) {
-            HStack(spacing: 6) {
-                LiveDot(color: m.state.color, pulsing: m.state == .slouching || model.alerting)
-                Image(systemName: m.state.symbol)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(m.state.color)
-            }
-            .frame(width: NotchModel.wing, alignment: .center)
+            LiveDot(color: m.state.color, pulsing: m.state == .slouching || model.alerting)
+                .frame(width: NotchModel.wing, alignment: .center)
             Spacer(minLength: model.notchWidth)
             rightWing.frame(width: NotchModel.wing, alignment: .center)
         }
@@ -195,14 +188,8 @@ struct NotchView: View {
 
     @ViewBuilder private var rightWing: some View {
         switch m.state {
-        case .slouching:
-            Text(clock(m.slouchSeconds)).foregroundStyle(.orange)
-        case .good:
-            if let p = m.recoveryProgress {
-                Text("\(Int((1 - p) * m.recoverySeconds))s").foregroundStyle(.green)
-            } else {
-                Text("\(Int(max(m.reading.pitch, abs(m.reading.roll))))°").foregroundStyle(.green)
-            }
+        case .good, .slouching:
+            Text("\(Int(max(m.reading.pitch, abs(m.reading.roll))))°").foregroundStyle(m.state.color)
         case .calibrating:
             ProgressView().controlSize(.mini)
         case .paused:
@@ -212,22 +199,8 @@ struct NotchView: View {
         }
     }
 
-    private func progressLine(width: CGFloat) -> some View {
-        let frac = min(1, CGFloat(m.slouchSeconds) / CGFloat(max(1, m.alertSeconds)))
-        return VStack {
-            Spacer()
-            Capsule().fill(m.recoveryProgress == nil ? Color.orange : Color.green)
-                .frame(width: max(4, (width - 28) * frac), height: 2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 14)
-                .padding(.bottom, 2)
-        }
-    }
-
     private var expanded: some View {
         HStack(alignment: .top, spacing: 10) {
-            HeadView(headScene: m.headScene)
-                .frame(width: 150, height: 220)
             VStack(alignment: .leading, spacing: 7) {
                 Text(m.calibrationPrompt ?? m.state.label)
                     .font(.system(size: 15, weight: .semibold))
@@ -238,16 +211,9 @@ struct NotchView: View {
                 }
                 if m.state == .good || m.state == .slouching {
                     metric("Tilt", String(format: "%d° fwd · %d° side", Int(m.reading.pitch), Int(abs(m.reading.roll))),
-                           bad: m.reading.pitch > m.maxForwardTilt || abs(m.reading.roll) > m.maxSideTilt)
+                           bad: m.readingFlags.tilt)
                     metric("Head", String(format: "%+.1f fwd · %+.1f low cm", m.reading.forwardCM, m.reading.dropCM),
-                           bad: m.reading.forwardCM > m.maxShiftCM || m.reading.dropCM > m.maxShiftCM)
-                    VStack(alignment: .leading, spacing: 3) {
-                        ProgressView(value: Double(min(m.slouchSeconds, m.alertSeconds)), total: Double(m.alertSeconds))
-                            .tint(.orange)
-                        Text(m.recoveryProgress.map { "Good! Timer resets in \(Int((1 - $0) * m.recoverySeconds))s" }
-                             ?? (m.slouchSeconds > 0 ? "Slouching \(clock(m.slouchSeconds)) of \(clock(m.alertSeconds))" : "Nice — keep it up"))
-                            .font(.caption2).foregroundStyle(.secondary)
-                    }
+                           bad: m.readingFlags.head)
                     positionLine
                     deskLine
                 }
@@ -345,7 +311,6 @@ struct NotchView: View {
         .font(.system(size: 12))
     }
 
-    private func clock(_ s: Int) -> String { String(format: "%d:%02d", s / 60, s % 60) }
 }
 
 private struct LiveDot: View {

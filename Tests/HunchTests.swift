@@ -42,10 +42,10 @@ func hunchTests() {
     test("chin-poke pattern (head forward, chin level) is flagged after a minute") {
         var d = HunchDetector()
         feed(&d, reading(), seconds: 60)
-        feed(&d, reading(pitch: -2, forward: 4, drop: 3), seconds: 80)
-        expect(!d.isHunched || d.hunchySeconds >= 60, "not before a minute")
-        feed(&d, reading(pitch: -2, forward: 4, drop: 3), seconds: 30)
-        expect(d.isHunched, "hunchy for \(d.hunchySeconds)s")
+        feed(&d, reading(pitch: -2, forward: 4, drop: 3), seconds: 60)
+        expect(!d.isHunched, "not before a minute (p = \(d.hunchProbability))")
+        feed(&d, reading(pitch: -2, forward: 4, drop: 3), seconds: 50)
+        expect(d.isHunched, "flagged after 110 s of the pattern (p = \(d.hunchProbability))")
     }
 
     test("looking down at the keyboard is not a hunch") {

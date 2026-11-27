@@ -117,16 +117,4 @@ func reviewFixTests() {
         let ordered = ex.indices.sorted { ex[$0].date < ex[$1].date }.map { fold[$0] }
         expect(ordered == ordered.sorted(), "folds are blocks of time")
     }
-
-    test("a corrupted head model file is rejected instead of crashing") {
-        var bad = Data("glTF".utf8)
-        for v: UInt32 in [2, 1000, 1_000_000, 0x4E4F_534A] { withUnsafeBytes(of: v.littleEndian) { bad.append(contentsOf: $0) } }
-        bad.append(Data("{\"accessors\":[]}".utf8))               // claims a 1 MB JSON chunk, file is ~40 bytes
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("truncated-\(UUID().uuidString).glb")
-        try bad.write(to: url)
-        defer { try? FileManager.default.removeItem(at: url) }
-        var threw = false
-        do { _ = try GLBLoader.loadGeometry(url: url) } catch { threw = true }
-        expect(threw)
-    }
 }

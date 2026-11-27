@@ -15,10 +15,6 @@
          <BuildableReference BuildableIdentifier = "primary" BlueprintIdentifier = "A1000000000000000000000C" BuildableName = "PostureTests" BlueprintName = "PostureTests" ReferencedContainer = "container:Posture.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
-      <CommandLineArguments>
-         <CommandLineArgument argument = "$(SRCROOT)/Resources/Models" isEnabled = "YES">
-         </CommandLineArgument>
-      </CommandLineArguments>
    </LaunchAction>
    <ProfileAction buildConfiguration = "Release" shouldUseLaunchSchemeArgsEnv = "YES" savedToolIdentifier = "" useCustomWorkingDirectory = "NO" debugDocumentVersioning = "YES">
       <BuildableProductRunnable runnableDebuggingMode = "0">

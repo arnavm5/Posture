@@ -12,36 +12,17 @@
 		A1000000000000000000000A /* PostureTests */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = PostureTests; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		A10000000000000000000012 /* Exceptions for "Shared" folder in "PostureTests" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				PostureMonitor.swift,
-			);
-			target = A1000000000000000000000C /* PostureTests */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
-
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		A10000000000000000000004 /* Shared */ = {
+		A10000000000000000000004 /* Core */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				A10000000000000000000012 /* Exceptions for "Shared" folder in "PostureTests" target */,
-			);
-			name = Shared;
-			path = Sources/Shared;
+			name = Core;
+			path = Sources/Core;
 			sourceTree = "<group>";
 		};
-		A10000000000000000000005 /* macOS */ = {
+		A10000000000000000000005 /* App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			name = macOS;
-			path = Sources/macOS;
-			sourceTree = "<group>";
-		};
-		A10000000000000000000006 /* Models */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			name = Models;
-			path = Resources/Models;
+			name = App;
+			path = Sources/App;
 			sourceTree = "<group>";
 		};
 		A10000000000000000000007 /* Tests */ = {
@@ -72,9 +53,8 @@
 		A10000000000000000000002 = {
 			isa = PBXGroup;
 			children = (
-				A10000000000000000000004 /* Shared */,
-				A10000000000000000000005 /* macOS */,
-				A10000000000000000000006 /* Models */,
+				A10000000000000000000004 /* Core */,
+				A10000000000000000000005 /* App */,
 				A10000000000000000000008 /* Info.plist */,
 				A10000000000000000000007 /* Tests */,
 				A10000000000000000000003 /* Products */,
@@ -106,9 +86,8 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A10000000000000000000004 /* Shared */,
-				A10000000000000000000005 /* macOS */,
-				A10000000000000000000006 /* Models */,
+				A10000000000000000000004 /* Core */,
+				A10000000000000000000005 /* App */,
 			);
 			name = Posture;
 			packageProductDependencies = (
@@ -129,7 +108,7 @@
 			dependencies = (
 			);
 			fileSystemSynchronizedGroups = (
-				A10000000000000000000004 /* Shared */,
+				A10000000000000000000004 /* Core */,
 				A10000000000000000000007 /* Tests */,
 			);
 			name = PostureTests;
@@ -276,12 +255,12 @@
 		A1000000000000000000001A /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
-				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				CODE_SIGN_IDENTITY = "-";
 				CODE_SIGN_STYLE = Manual;
 				DEVELOPMENT_TEAM = "";
 				ENABLE_HARDENED_RUNTIME = NO;
 				PRODUCT_NAME = PostureTests;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
 			};
 			name = Debug;
 		};

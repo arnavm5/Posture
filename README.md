@@ -2,15 +2,16 @@
 
 **A native macOS posture coach that lives in your MacBook's notch and uses the motion sensors in your AirPods.**
 
-Posture tracks your head in real time, shows a live 3D mannequin that mirrors it, and nudges you when
+Posture tracks your head in real time, shows your posture and numbers in the notch, and nudges you when
 you've been slouching for too long (10 minutes by default).
 
 - **Live in the notch:** a small black panel wraps around the camera housing and shows your status
-  and slouch timer. Hover over it to see the live 3D bust and your numbers.
+  (a colored dot) and current tilt. Hover over it to see your numbers.
 - **Tilt and position:** forward tilt and side tilt are measured separately, and the app estimates
   how far your head has moved forward or down compared with your calibrated "sitting tall" pose.
-- **Forgiving timer:** glancing at your keyboard doesn't count. The timer only resets after 30 seconds
-  of good posture, and the status updates instantly so you can see you've corrected.
+- **Forgiving timer:** looking down at your keyboard doesn't count unless your head stays down for
+  30 seconds (adjustable). The timer only resets after 30 seconds of good posture, and the status
+  updates instantly so you can see you've corrected.
 - **Private:** everything runs on-device. No camera, no network, no accounts.
 
 ---
@@ -29,8 +30,8 @@ you've been slouching for too long (10 minutes by default).
 ./build.sh
 open build/Posture.app
 ```
-`build.sh` compiles `Sources/Shared` + `Sources/macOS` with `swiftc`, assembles `build/Posture.app`,
-copies the 3D model into it, and ad-hoc signs it. Copy it to `/Applications` and turn on
+`build.sh` compiles `Sources/Core` + `Sources/App` with `swiftc`, assembles `build/Posture.app`
+and ad-hoc signs it. Copy it to `/Applications` and turn on
 **Launch at login** from the menu if you want to keep it.
 On an Intel Mac it builds for Intel automatically; `UNIVERSAL=1 ./build.sh` makes one app for both.
 
@@ -42,16 +43,19 @@ icon or window: look for it in the menu bar and around the notch. Quit any copy 
 The project uses synchronized folders, so new files in `Sources/` and `Tests/` show up automatically.
 To run the tests in Xcode, pick the **PostureTests** scheme and press **Run** (results print in the console).
 
-## First run: calibration (about 15 seconds)
+## First run: calibration (about 25 seconds)
 
-Put your AirPods in and choose **Calibrate**. Four short steps:
+Put your AirPods in and choose **Calibrate**. Six short steps:
 
-1. **Sit tall** and look at your screen. This sets "up".
+1. **Sit tall** and look at your screen. This sets "up"; the step moves on once you've held still.
 2. **Look down** at your keyboard and back up. This sets "forward".
-3. **Turn** your head left, then right.
-4. **Tilt** each ear toward its shoulder.
+3. **Slouch** the way you usually do, and hold it.
+4. **Sit tall** again. Steps 3 and 4 set your limits between the two and double-check step 1
+   (turn off "Include a quick slouch test" to skip them).
+5. **Turn** your head left, then right.
+6. **Tilt** each ear toward its shoulder.
 
-Steps 3 and 4 let the app measure where your AirPods sit relative to the point your neck pivots on
+Steps 5 and 6 let the app measure where your AirPods sit relative to the point your neck pivots on
 (the "lever arm"), which is what makes the position tracking accurate. Each AirPod keeps its own
 calibration, so if your data switches to the other earbud you'll be asked to calibrate it once.
 After you take the AirPods out and put them back in, the app suggests recalibrating.
@@ -67,10 +71,19 @@ You're slouching if **any** of these is true, compared with your calibrated pose
 | Head moved forward | more than **5 cm** |
 | Head dropped lower | more than **5 cm** |
 
-Plus **hunched shoulders** (see below). All four are adjustable. A **gentle ding** plays 1 second after a slouch is detected (adjustable from "right away" to 30 s in
+Plus **hunched shoulders** (see below). All four are adjustable, and the optional **slouch test** in
+calibration sets the forward-tilt and head-shift limits from how you actually slouch.
+
+**Looking down isn't slouching (at first).** AirPods only see your head, and glancing at your keyboard
+tips it exactly like a head-down slouch. So when only your head is tipped forward (no real forward or
+downward movement), it counts once it stays down for **30 seconds** ("Looking down is OK for" under Slouch
+limits; set 0 for right away). Looking back up for 2 seconds ends it. Real head movement and side tilt
+count right away. While you're looking down the slouch timer pauses rather than resetting.
+
+A **gentle ding** plays 1 second after a slouch is detected (adjustable from "right away" to 30 s in
 Alerts & sounds). Every new slouch dings once; a slouch counts as new after 10 seconds of sitting well, so
 hovering right at the limit doesn't nag. After **10 minutes** of slouching you get a notification and the notch
-drops open with an orange glow, with a **two-note chime**, then again every 10 minutes if you keep slouching. Taking your
+drops open with an orange glow, and a voice says **"grumble"**, then again every 10 minutes if you keep slouching. Taking your
 AirPods out pauses tracking; **Pause 1 hour** silences it.
 
 ## Hunched shoulders (AirPods only, learns from you)
@@ -81,8 +94,15 @@ screen. Looking down at a keyboard is the opposite (head tips down), so it doesn
 creeps in, and a slow upward drift of the chin over several minutes is visible even when the movement
 itself is too slow to feel.
 
+- **Body model:** the head sits on a chain (hips → trunk → neck → head), so the app estimates how far your
+  upper body leans or curls forward and how far your neck bends, separately. Your trunk changes slowly and
+  your neck quickly, so a glance goes to the neck and only a lasting shift to the trunk. Trunk forward with
+  the neck bent back is a hunch; trunk upright with the neck bent forward is looking down.
 - **Built-in rules (day one):** the chin-poke pattern held for a minute, or a slow chin-up drift,
   adds "shoulders hunched" as a slouch reason.
+- **Steady verdicts:** every second's verdict is evidence for a probability that you're hunched. A clear
+  hunch is flagged sooner than a borderline one, a short break doesn't reset it, and sitting tall clears it
+  within about half a minute.
 - **Teach it your hunch:** tap **I'm hunched** or **I'm fine** (menu-bar menu or the notch). Each tap
   labels the moment *5 seconds before* the tap (by the time you tap you've usually started sitting up) and
   stores the last 16 minutes of head data with it. Tapping again within 10 s replaces your last answer.
@@ -166,18 +186,6 @@ A held slouch stays detected: the estimate doesn't drift while you're still, so 
 overnight scale (about 8 hours) as a last-resort bound. Sitting back up after slouching with your head
 tipped snaps the estimate back to neutral; a slump that ends with your eyes level on the screen does not.
 
-### The 3D bust
-A head scan rendered as a soft, warm-clay sculpture (eyes softened, gentle lighting, seen from a
-three-quarter side angle that shows forward-head posture best) with SceneKit, rigged with three joints (shoulders, base of the neck, base of the skull, placed along the
-spine). A forward head shift is shown the way a slouch really happens: the upper back rounds a little and
-the neck bends forward, while the head keeps pointing exactly where your AirPods say. The head never slides
-over the shoulders, which is what made the neck look detached. The female bust is the same
-scan reshaped in code. Hair is strand-based: about 1,000 guide strands grown from the scalp in the shape
-of the hairstyle, each with a clump of child strands, about 15,000 tapered ribbons in total. A faint
-floor-and-wall grid behind the bust adds depth. Motion is smoothed every frame: AirPods readings (~25 per second) set a
-target and the head glides toward it, with heavy smoothing when you're still (no jitter) and light smoothing
-when you move (no lag).
-
 ## Tests
 
 ```sh
@@ -196,34 +204,43 @@ Compiles and runs the suite in `Tests/` with plain `swiftc` (or use the **Postur
 - **Standing desk and model performance:** stand-up / sit-down detection, ignoring shuffles and
   drift, manual correction, per-position calibrations, honest cross-validation, live agreement record.
 - **Slouch timer**, **relative position tracker** (stand up / sit down, no drift, walking, world frame).
-- **3D model and hair:** loading, smoothing, female morph, scalp fitting, both hairstyles, style
-  switching, and the background grid.
+- **Dings and alert sounds:** ding timing, one ding per slouch, the spoken alert.
 
 ## Project layout
 
 ```
 Sources/
-  Shared/                 Motion, calibration, estimation, 3D bust (UI-independent core)
-    HeadphoneMotion.swift   CMHeadphoneMotionManager stream (gravity, accel, gyro, earbud)
-    MotionProcessing.swift  Kalman filter, stillness detector, gyro sign check, lever-arm compensation + fit
-    HeadCalibration.swift   4-step calibration result, per-earbud storage
-    PostureEstimator.swift  Tilt + head-position estimate
-    PostureRules.swift      What counts as slouching
-    HunchDetector.swift     Hunched-shoulder rules, personal model, labelled examples
-    DeskMode.swift          Sitting / standing detection
-    SlouchTimer.swift       The forgiving slouch clock
-    RelativePosition.swift  Display-only "how far has my head moved" tracker
-    PostureMonitor.swift    Ties it together: calibration flow, 1 Hz loop, alerts, settings
-    HeadView.swift          SceneKit scene: rigged bust, materials, lighting, grid
-    Hair.swift              Strand-based hairstyles, female bust morph, scalp fitting
-    GLBLoader.swift         Minimal .glb reader and mesh smoothing
-    Platform.swift          Small AppKit/SceneKit helpers
-    Notifier.swift          Notifications
-  macOS/                  Menu bar, notch panel, Hunch Model window
-Resources/                Mac Info.plist, Models/ (head scan, normal map, license)
-Tests/                    Test suite (run with ./test.sh)
-build.sh, test.sh         Build and test scripts
-Posture.xcodeproj         Xcode project (optional; same sources)
+  Core/                       Everything but the app shell (UI-independent; compiled by the tests)
+    Motion/
+      HeadphoneMotion.swift     CMHeadphoneMotionManager stream (gravity, accel, gyro, earbud)
+      MotionProcessing.swift    Kalman filter, stillness detector, gyro sign check, lever-arm compensation + fit
+      RelativePosition.swift    Display-only "how far has my head moved" tracker
+    Calibration/
+      HeadCalibration.swift     Calibration solve (steady neutral, fitted nod axis), per-earbud storage
+      SlouchTest.swift          The quick slouch test: personal limits, refined neutral
+      CalibrationSession.swift  The calibration steps: what each records, early finish, notes
+    Posture/
+      PostureEstimator.swift    Tilt + head-position estimate
+      PostureRules.swift        What counts as slouching (and the looking-down grace)
+      SlouchTimer.swift         The forgiving slouch clock and the ding
+      DeskMode.swift            Sitting / standing detection
+    Hunch/
+      HunchDetector.swift       Hunched-shoulder rules, personal model, labelled examples
+      HunchModels.swift         Features, logistic regression, boosted trees, training
+      BodyModel.swift           Trunk lean vs. neck bend, inferred from the head (Kalman filter)
+      HunchStateFilter.swift    Turns per-second evidence into a steady hunched probability
+    Alerts/
+      Notifier.swift            Notifications and check-ins
+      Chime.swift               Ding and alert sounds
+  App/                        The macOS app
+    PostureApp.swift            @main, menu bar extra
+    PostureMonitor.swift        Ties it together: calibration flow, 1 Hz loop, alerts, settings
+    Views/                      Menu bar popover, notch panel, Hunch Model window
+Resources/                    Mac Info.plist
+Tests/                        Test suite (run with ./test.sh)
+scripts/                      Toolchain selection shared by the scripts
+build.sh, test.sh             Build and test scripts
+Posture.xcodeproj             Xcode project (optional; same sources)
 ```
 
 ## Troubleshooting
@@ -232,12 +249,4 @@ Posture.xcodeproj         Xcode project (optional; same sources)
 |---|---|
 | "Waiting for AirPods…" never goes away | Check the AirPods are connected to this Mac and are a supported model. Allow Posture under System Settings ▸ Privacy & Security ▸ Motion & Fitness. |
 | No notifications | System Settings ▸ Notifications ▸ Posture ▸ Allow. Use **Test alert** to check. |
-| The 3D head moves the wrong way | Edit `pitchSign`, `yawSign` or `rollSign` at the top of `Sources/Shared/HeadView.swift`. |
 | Numbers look off after re-seating the AirPods | Choose **Recalibrate**. |
-
-## Credits
-
-3D head: "Infinite, 3D Head Scan" by Lee Perry-Smith, licensed under
-[CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), based on a work at www.triplegangers.com
-(obtained via the three.js examples). Rendered here as an untextured mannequin with procedurally
-generated hair. See `Resources/Models/Head-LICENSE.txt`.

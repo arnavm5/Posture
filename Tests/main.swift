@@ -1,13 +1,15 @@
 import Foundation
 
-// Usage: PostureTests <path to Resources/Models>
-let resources = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? "Resources/Models")
-
 estimatorTests()
 motionProcessingTests()
 cleaningTests()
 calibrationTests()
+calibrationAccuracyTests()
+calibrationSessionTests()
+lookDownTests()
 hunchTests()
+bodyModelTests()
+hunchStateTests()
 hunchModelTests()
 hunchDataQualityTests()
 deskAndModelTests()
@@ -15,9 +17,6 @@ slouchTimerTests()
 reviewFixTests()
 relativePositionTests()
 MainActor.assumeIsolated {
-    modelTests(resources: resources)
-    gridTests()
-    feelTests(resources: resources)
-    headPoseTests()
+    dingTests()
 }
 finish()

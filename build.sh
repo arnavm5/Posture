@@ -16,7 +16,7 @@ slices=()
 for arch in $ARCHS; do
   swiftc -O -parse-as-library -swift-version 5 \
     -target "$arch-apple-macosx$MACOS_MIN" \
-    Sources/Shared/*.swift Sources/macOS/*.swift \
+    Sources/Core/**/*.swift Sources/App/**/*.swift \
     -o "$OBJ/Posture-$arch"
   slices+=("$OBJ/Posture-$arch")
 done
@@ -27,6 +27,5 @@ else
 fi
 
 cp Resources/Info.plist "$APP/Contents/Info.plist"
-cp Resources/Models/* "$APP/Contents/Resources/"
 codesign --force --sign - "$APP"
 echo "Built $APP ($(lipo -archs "$APP/Contents/MacOS/Posture"))  →  open $APP   (or copy it to /Applications)"
